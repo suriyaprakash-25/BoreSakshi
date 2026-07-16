@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cd D:\\\\Hackathon\\\\BoreSakshi\\\\web; \\(Get-Content package.json | ConvertFrom-Json\\).dependencies | ConvertTo-Json; Write-Output \"--- lucide check ---\"; node -e \"const p=require\\('lucide-react/package.json'\\); console.log\\('lucide-react', p.version\\)\")",
+      "Bash(node *)",
+      "Skill(dataviz)"
+    ]
+  }
+}
