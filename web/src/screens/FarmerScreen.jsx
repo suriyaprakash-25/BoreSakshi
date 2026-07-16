@@ -8,6 +8,7 @@ const DEFAULT_CENTER = [11.36, 77.8]; // Namakkal / Tiruchengode belt
 
 export default function FarmerScreen() {
   const [selected, setSelected] = useState(null);
+  const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER);
   const [status, setStatus] = useState("idle"); // idle | loading | result | error
   const [prediction, setPrediction] = useState(null);
   const [borewells, setBorewells] = useState([]);
@@ -33,6 +34,24 @@ export default function FarmerScreen() {
     }
   }
 
+  function handlePinCurrentLocation() {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          setMapCenter([lat, lng]);
+          handlePick(lat, lng);
+        },
+        (err) => {
+          alert("Could not get current location: " + err.message);
+        }
+      );
+    } else {
+      alert("Geolocation is not supported by this browser.");
+    }
+  }
+
   return (
     <div className="app">
       <AppHeader subtitle="Know before you drill">
@@ -53,7 +72,7 @@ export default function FarmerScreen() {
       <main className="layout">
         <section className="map-col">
           <MapView
-            center={DEFAULT_CENTER}
+            center={mapCenter}
             selected={selected}
             onPick={handlePick}
             borewells={borewells}
@@ -66,7 +85,7 @@ export default function FarmerScreen() {
         </section>
 
         <aside className="panel-col">
-          <PredictionPanel status={status} data={prediction} coords={selected || { lat: 0, lng: 0 }} />
+          <PredictionPanel status={status} data={prediction} coords={selected || { lat: 0, lng: 0 }} onPinCurrentLocation={handlePinCurrentLocation} />
         </aside>
       </main>
     </div>

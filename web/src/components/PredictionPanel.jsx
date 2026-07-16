@@ -20,14 +20,16 @@ const confidenceStyle = {
   High: { bg: "rgba(22,185,138,.14)", fg: "var(--mint)" },
 };
 
-export default function PredictionPanel({ status, data, coords }) {
+export default function PredictionPanel({ status, data, coords, onPinCurrentLocation }) {
   if (status === "idle") {
     return (
       <div className="panel panel-empty">
         <div className="empty-badge"><Droplets size={30} strokeWidth={2} /></div>
         <h2>Know before you drill</h2>
         <p>Tap anywhere on the map to check the groundwater outlook for that spot — success odds, likely depth and expected yield.</p>
-        <div className="empty-hint">A ₹500 check instead of a ₹3&nbsp;lakh gamble.</div>
+        <button className="btn btn-primary" onClick={onPinCurrentLocation} style={{ marginTop: '1.5rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+          <MapPin size={18} /> Pin current location
+        </button>
       </div>
     );
   }

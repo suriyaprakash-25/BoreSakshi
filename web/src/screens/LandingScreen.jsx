@@ -20,23 +20,47 @@ export default function LandingScreen() {
 
       <main className="lp-main op-anim">
         {/* hero */}
-        <section className="lp-hero">
-          <span className="lp-eyebrow"><Droplets size={15} strokeWidth={2.4} /> Groundwater intelligence for rural India</span>
-          <h1 className="lp-h1">Know before you drill.</h1>
-          <p className="lp-lead">
-            A borewell is a ₹1.5–4 lakh bet made on guesswork. BoreSakshi turns real
-            drilled outcomes into an AI prediction you can trust — success odds, depth
-            and yield for any location, with our accuracy published in the open.
-          </p>
-          <div className="lp-cta">
-            <Link to="/" className="btn btn-primary btn-lg">
-              <MapPin size={19} strokeWidth={2.2} /> Check a location
-            </Link>
-            <Link to="/signin" className="btn btn-ghost btn-lg">
-              <HardHat size={19} strokeWidth={2.2} /> I'm a rig operator
-            </Link>
+        <section className="lp-hero-split">
+          <div className="lp-hero-text">
+            <span className="lp-eyebrow"><Droplets size={15} strokeWidth={2.4} /> Groundwater intelligence for rural India</span>
+            <h1 className="lp-h1">Know before you drill.</h1>
+            <p className="lp-lead">
+              A borewell is a ₹1.5–4 lakh bet made on guesswork. BoreSakshi turns real
+              drilled outcomes into an AI prediction you can trust — success odds, depth
+              and yield for any location, with our accuracy published in the open.
+            </p>
+            <div className="lp-cta">
+              <Link to="/" className="btn btn-primary btn-lg">
+                <MapPin size={19} strokeWidth={2.2} /> Check a location
+              </Link>
+              <Link to="/signin" className="btn btn-ghost btn-lg">
+                <HardHat size={19} strokeWidth={2.2} /> I'm a rig operator
+              </Link>
+            </div>
+            <p className="lp-cta-note">Checking a location is free and needs no account.</p>
           </div>
-          <p className="lp-cta-note">Checking a location is free and needs no account.</p>
+          <div className="lp-hero-visual">
+            <div className="lp-orb lp-orb-1"></div>
+            <div className="lp-orb lp-orb-2"></div>
+            
+            <div className="lp-floating-card lp-float-1">
+              <div className="lp-float-icon" style={{background: 'var(--teal-soft)', color: 'var(--teal)'}}><Cpu size={20} /></div>
+              <p className="lp-float-title">AI Prediction</p>
+              <p className="lp-float-sub">87% Success Probability</p>
+            </div>
+            
+            <div className="lp-floating-card lp-float-2">
+              <div className="lp-float-icon" style={{background: 'rgba(11, 232, 129, 0.1)', color: 'var(--mint-ink)'}}><CheckCircle2 size={20} /></div>
+              <p className="lp-float-title">Verified Outcome</p>
+              <p className="lp-float-sub">Logged by rig operator</p>
+            </div>
+            
+            <div className="lp-floating-card lp-float-3">
+              <div className="lp-float-icon" style={{background: 'rgba(0, 168, 255, 0.1)', color: 'var(--water)'}}><Droplets size={20} /></div>
+              <p className="lp-float-title">Expected Yield</p>
+              <p className="lp-float-sub">1.5 - 2.5 inches</p>
+            </div>
+          </div>
         </section>
 
         {/* 1) the problem */}
@@ -45,8 +69,8 @@ export default function LandingScreen() {
             <span className="lp-kicker lp-kicker-warn">The problem</span>
             <h2>Every dry borehole costs a family a fortune</h2>
           </div>
-          <div className="lp-cards">
-            <Feature icon={TrendingDown} tone="warn"
+          <div className="lp-bento">
+            <Feature icon={TrendingDown} tone="warn" isLarge
               title="Drilled on guesswork"
               body="Water diviners and unverifiable survey firms decide where to drill. Nobody is held to account when the hole comes up dry." />
             <Feature icon={Coins} tone="warn"
@@ -64,16 +88,16 @@ export default function LandingScreen() {
             <span className="lp-kicker">The solution</span>
             <h2>A verified-outcome network, feeding an AI engine</h2>
           </div>
-          <div className="lp-cards">
+          <div className="lp-bento">
+            <Feature icon={Cpu} isLarge
+              title="A prediction for any point"
+              body="Drop a pin and get success probability, a depth band, expected yield and a confidence level — a ₹500 check, not a ₹3 lakh gamble." />
             <Feature icon={HardHat}
               title="Operators log real jobs"
               body="Rig operators record each completed borewell in seconds — voice or tap — in exchange for free job reports and business tools." />
             <Feature icon={Satellite}
               title="Fused with earth data"
               body="Those verified logs combine with satellite, geology and rainfall signals — real ground truth, not just a static regional map." />
-            <Feature icon={Cpu}
-              title="A prediction for any point"
-              body="Drop a pin and get success probability, a depth band, expected yield and a confidence level — a ₹500 check, not a ₹3 lakh gamble." />
           </div>
         </section>
 
@@ -133,14 +157,16 @@ export default function LandingScreen() {
   );
 }
 
-function Feature({ icon: Icon, title, body, tone }) {
+function Feature({ icon: Icon, title, body, tone, isLarge }) {
   return (
-    <div className="lp-feature">
+    <div className={`lp-feature ${isLarge ? 'bento-large' : ''}`}>
       <div className={`lp-feature-icon ${tone === "warn" ? "warn" : ""}`}>
-        <Icon size={22} strokeWidth={2} />
+        <Icon size={26} strokeWidth={2.5} />
       </div>
-      <h3>{title}</h3>
-      <p>{body}</p>
+      <div>
+        <h3>{title}</h3>
+        <p>{body}</p>
+      </div>
     </div>
   );
 }

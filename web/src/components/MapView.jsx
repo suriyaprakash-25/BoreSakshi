@@ -1,6 +1,7 @@
 // MapView.jsx — interactive map. Tap to choose a drill point; existing verified
 // borewells render as coloured dots (green = water found, red = dry).
-import { MapContainer, TileLayer, CircleMarker, Marker, useMapEvents, Tooltip } from "react-leaflet";
+import { MapContainer, TileLayer, CircleMarker, Marker, useMapEvents, Tooltip, useMap } from "react-leaflet";
+import { useEffect } from "react";
 import L from "leaflet";
 
 // custom teal "drill here" pin (avoids Leaflet's broken default-icon issue in bundlers)
@@ -20,9 +21,20 @@ function ClickHandler({ onPick }) {
   return null;
 }
 
+function MapUpdater({ center }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center) {
+      map.flyTo(center, map.getZoom());
+    }
+  }, [center, map]);
+  return null;
+}
+
 export default function MapView({ center, selected, onPick, borewells }) {
   return (
     <MapContainer center={center} zoom={12} className="map" zoomControl={true} scrollWheelZoom={true}>
+      <MapUpdater center={center} />
       <TileLayer
         attribution='&copy; OpenStreetMap'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
