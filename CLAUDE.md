@@ -36,11 +36,28 @@ in `server/README.md`) against `/api/health`, `/api/predict`, `/api/borewells`,
 ## Architecture
 
 **The prediction is a deterministic mock.** `server/predict.js` is the single file
-the real AI model plugs into. `predictBorewell()` returns a fixed output shape
-(`successProbability`, `depthBandFt`, `expectedYieldLpm`, `confidence`, `rockType`,
-`basis`, `isMock`); it must keep that shape so nothing downstream changes. Results
-are seeded from lat/lng so the same pin always gives the same answer (demos must be
-repeatable — never introduce randomness here).
+the real AI model plugs into. `predictBorewell({lat,lng,nearbyLogs})` returns a fixed
+output shape (`successProbability`, `depthBandFt`, `expectedYieldLpm`, `confidence`,
+`rockType`, `basis`, `isMock`, plus explainability: `factors[]` and `confidenceReason`);
+it must keep that shape so nothing downstream changes. Results are seeded from lat/lng so
+the same pin always gives the same answer (demos must be repeatable — never introduce
+randomness here). `NEAR_KM` (5) is exported from here and imported by `index.js` — one
+source of truth for the nearby radius.
+
+**Explainability (all heuristic today, real-model SHAP later — same shape).** `factors`
+is a `{label, impact}[]` decomposition whose impacts are probability POINTS and literally
+sum to `successProbability` before the 8–95 clamp: `50 baseline + geology + nearby
+successes − nearby failures`. Nearby verified logs (real drill outcomes within `NEAR_KM`,
+passed in as `nearbyLogs`) are distance-weighted (linear, 1 at the pin → 0 at the edge);
+with zero neighbours the nearby terms are 0 and the score reduces exactly to the old
+geology-only value, so isolated pins never shift. `confidenceReason` carries the
+nearby count/success/fail split, radius, and freshest nearby log date. `POST /api/predict`
+also returns a trimmed `nearby[]` (nearest 20, with `distanceKm`) as the evidence list —
+no separate endpoint. Frontend surfaces all of this in `PredictionPanel.jsx`: "Why this
+prediction?" (factor bars), "Why this confidence?", a Nearby-wells explorer, and **Ask
+BoreSakshi** — a pure string-templating restatement of the same numbers (NOT an AI/LLM
+call, no network). When the real model lands, emit its feature importances into `factors`
+and none of this UI changes.
 
 **The accountability loop** lives in `server/index.js` and is the point of the
 project:

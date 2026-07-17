@@ -4,7 +4,7 @@ import express from "express";
 import cors from "cors";
 import { nanoid } from "nanoid";
 import { db, connectDB, pingDB } from "./db.js";
-import { predictBorewell, distanceKm } from "./predict.js";
+import { predictBorewell, distanceKm, NEAR_KM } from "./predict.js";
 import { signup, signin, requireAuth, requireAdmin } from "./auth.js";
 import {
   validate, signupSchema, signinSchema, predictSchema, borewellSchema,
@@ -23,7 +23,8 @@ app.use(express.json({ limit: "10kb" })); // reject oversized payloads (→ 413)
 if (process.env.TRUST_PROXY) app.set("trust proxy", Number(process.env.TRUST_PROXY));
 
 const PORT = process.env.PORT || 4000;
-const NEAR_KM = 5; // "nearby" radius for confidence + ledger matching
+// NEAR_KM ("nearby" radius for confidence, ledger matching + explainability)
+// is defined once in predict.js and imported so both files can never drift.
 
 // health check — reports DB liveness; never hangs (5s server-selection timeout)
 app.get("/api/health", asyncHandler(async (_req, res) => {
@@ -112,8 +113,17 @@ app.get("/api/assignments", requireAuth, asyncHandler(async (req, res) =>
 // ----------------------------------------------------------------------------
 app.post("/api/predict", validate(predictSchema), asyncHandler(async (req, res) => {
   const { lat, lng, save: shouldSave = true } = req.body;
-  const nearbyCount = (await db.getBorewells()).filter((b) => distanceKm({ lat, lng }, b) <= NEAR_KM).length;
-  const prediction = predictBorewell({ lat, lng, nearbyCount });
+
+  // The real verified drill logs within NEAR_KM — the SAME data that drives the
+  // prediction, its `factors`, and its confidence. Annotated with distance and
+  // sorted nearest-first so the frontend "nearby wells" explorer can show the
+  // exact evidence behind the number.
+  const nearbyLogs = (await db.getBorewells())
+    .map((b) => ({ ...b, distanceKm: distanceKm({ lat, lng }, b) }))
+    .filter((b) => b.distanceKm <= NEAR_KM)
+    .sort((a, b) => a.distanceKm - b.distanceKm);
+
+  const prediction = predictBorewell({ lat, lng, nearbyLogs });
 
   let saved = null;
   if (shouldSave) {
@@ -126,7 +136,21 @@ app.post("/api/predict", validate(predictSchema), asyncHandler(async (req, res) 
       createdAt: new Date().toISOString(),
     });
   }
-  res.json({ ...prediction, predictionId: saved?.id ?? null, nearbyVerifiedLogs: nearbyCount });
+  res.json({
+    ...prediction,
+    predictionId: saved?.id ?? null,
+    nearbyVerifiedLogs: nearbyLogs.length,
+    // trimmed evidence list for the Nearby Borewell Explorer (proof for the user)
+    nearby: nearbyLogs.slice(0, 20).map((b) => ({
+      id: b.id,
+      distanceKm: Math.round(b.distanceKm * 100) / 100,
+      depthFt: b.depthFt ?? null,
+      success: b.success,
+      strata: b.strata || "",
+      placeName: b.placeName || "",
+      createdAt: b.createdAt,
+    })),
+  });
 }));
 
 // ----------------------------------------------------------------------------

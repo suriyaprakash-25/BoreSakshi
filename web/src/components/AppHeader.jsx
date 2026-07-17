@@ -9,7 +9,7 @@ import AuthBadge from "./AuthBadge.jsx";
 import { useAuth } from "../auth.jsx";
 
 const PUBLIC_TABS = [
-  { to: "/", end: true, label: "Map", icon: MapPin },
+  { to: "/map", end: true, label: "Map", icon: MapPin },
   { to: "/ledger", label: "Ledger", icon: Scale },
 ];
 const OPERATOR_TABS = [
@@ -35,17 +35,23 @@ export default function AppHeader({ subtitle = "Know before you drill", children
     : operator
       ? [OPERATOR_TABS[0], PUBLIC_TABS[0], OPERATOR_TABS[1], PUBLIC_TABS[1], OPERATOR_TABS[2]]
       : PUBLIC_TABS;
+  const homePath = operator?.role === "admin" ? "/admin" : operator ? "/dashboard" : "/";
 
   return (
     <header className="topbar">
-      <Link to="/welcome" className="brand" aria-label="BoreSakshi home">
+      <Link 
+        to={homePath} 
+        className="brand" 
+        aria-label="BoreSakshi home"
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      >
         <span className="brand-mark">
           <img src="/logo.png" alt="BoreSakshi Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', borderRadius: 'inherit', transform: 'scale(2.5)' }} />
         </span>
         <span className="brand-text">
           <span className="brand-name">BoreSakshi</span>
           <span className="brand-tag">{subtitle}</span>
-        </span>
+        </span> 
       </Link>
 
       <nav className="nav" aria-label="Primary">

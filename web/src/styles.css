@@ -704,6 +704,195 @@ input:focus-visible {
   color: #9a6a00;
 }
 
+/* ---- explainability: disclosures, factors, confidence, nearby, ask -------- */
+.disclosure {
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  margin-bottom: 12px;
+  overflow: hidden;
+  background: #fff;
+}
+.disclosure-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 13px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+  transition: background var(--dur) var(--ease);
+}
+.disclosure-head:hover { background: #f7fafc; }
+.disclosure-head:focus-visible { outline: none; box-shadow: var(--focus); }
+.disclosure-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.disclosure-title svg { color: var(--teal-deep); }
+.disclosure-chev {
+  color: var(--slate);
+  transition: transform var(--dur) var(--ease);
+  flex: none;
+}
+.disclosure.open .disclosure-chev { transform: rotate(180deg); }
+.disclosure-body {
+  padding: 4px 13px 13px;
+  animation: fade-up 0.24s var(--ease) both;
+}
+
+/* factor bars (item 1) */
+.factors { display: flex; flex-direction: column; gap: 10px; }
+.factor-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.factor-label { font-size: 12px; color: var(--slate); line-height: 1.35; }
+.factor-impact {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.factor-pos .factor-impact { color: var(--mint-ink); }
+.factor-neg .factor-impact { color: var(--red-ink); }
+.factor-base .factor-impact, .factor-zero .factor-impact { color: var(--slate); }
+.factor-track {
+  height: 7px;
+  border-radius: 999px;
+  background: #eef2f6;
+  overflow: hidden;
+}
+.factor-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width var(--dur) var(--ease);
+}
+.factor-pos .factor-fill { background: var(--mint); }
+.factor-neg .factor-fill { background: var(--red); }
+.factor-base .factor-fill { background: var(--slate); opacity: 0.55; }
+.factor-zero .factor-fill { background: #cdd7e0; }
+.factors-note {
+  font-size: 11px;
+  color: var(--slate);
+  line-height: 1.5;
+  margin: 4px 0 0;
+}
+
+/* confidence reasoning (item 2) */
+.why-conf { display: flex; flex-direction: column; gap: 8px; }
+.why-conf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.why-conf-row svg { color: var(--teal-deep); flex: none; }
+.why-conf-note { font-size: 11px; color: var(--slate); line-height: 1.5; margin: 2px 0 0; }
+
+/* nearby borewell explorer (item 3) */
+.nearby-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.nearby-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: #f7fafc;
+}
+.nearby-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: #fff;
+}
+.nearby-dot.ok { background: var(--mint-ink); }
+.nearby-dot.dry { background: var(--red-ink); }
+.nearby-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.nearby-place {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nearby-meta { font-size: 11.5px; color: var(--slate); }
+.nearby-dist {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--teal-deep);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.nearby-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--slate);
+  line-height: 1.5;
+}
+.nearby-empty svg { color: var(--teal-deep); flex: none; margin-top: 1px; }
+
+/* Ask BoreSakshi (item 4) */
+.ask {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 13px;
+  margin-bottom: 12px;
+  border-radius: var(--r-sm);
+  background: var(--teal-soft);
+  border: 1px solid rgba(0, 210, 211, 0.28);
+}
+.ask-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--teal-deep);
+}
+.ask-row { display: flex; gap: 8px; }
+.ask-input { flex: 1; background: #fff; }
+.ask-send { padding: 0 14px; flex: none; }
+.ask-answer {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  background: #fff;
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  animation: fade-up 0.24s var(--ease) both;
+}
+
 code {
   background: #eef2f6;
   padding: 1px 6px;
@@ -1717,8 +1906,8 @@ code {
 
   .lp-hero-split {
     grid-template-columns: 1fr;
-    min-height: 140vw;
-    padding: 110vw 0 60px;
+    min-height: 150vw;
+    padding: 110vw 0 45vw;
     /* push buttons below mobile image */
   }
 

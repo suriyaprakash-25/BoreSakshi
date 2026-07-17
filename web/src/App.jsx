@@ -19,7 +19,8 @@ import RequireOperator from "./components/RequireOperator.jsx";
 import RequireAdmin from "./components/RequireAdmin.jsx";
 
 // One app, several audiences:
-//   /          farmer prediction map (OPEN — no login)      /welcome  landing
+//   /          landing page
+//   /map       farmer prediction map (OPEN — no login)
 //   /ledger    public accountability ledger                 /signin /signup  auth
 //   /dashboard /log /history   operator-only (RequireOperator)
 //   /admin/*   admin-only (RequireAdmin) — distinct nav, platform oversight
@@ -30,8 +31,8 @@ export default function App() {
         <AdminDataProvider>
           <BrowserRouter>
             <Routes>
-              <Route path="/" element={<FarmerScreen />} />
-              <Route path="/welcome" element={<LandingScreen />} />
+              <Route path="/" element={<LandingScreen />} />
+              <Route path="/map" element={<FarmerScreen />} />
               <Route path="/ledger" element={<LedgerScreen />} />
               <Route path="/signin" element={<AuthScreen mode="signin" />} />
               <Route path="/signup" element={<AuthScreen mode="signup" />} />
