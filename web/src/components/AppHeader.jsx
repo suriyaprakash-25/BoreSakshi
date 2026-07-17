@@ -39,7 +39,9 @@ export default function AppHeader({ subtitle = "Know before you drill", children
   return (
     <header className="topbar">
       <Link to="/welcome" className="brand" aria-label="BoreSakshi home">
-        <span className="brand-mark"><Droplets size={20} strokeWidth={2.2} /></span>
+        <span className="brand-mark">
+          <img src="/logo.png" alt="BoreSakshi Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', borderRadius: 'inherit', transform: 'scale(2.5)' }} />
+        </span>
         <span className="brand-text">
           <span className="brand-name">BoreSakshi</span>
           <span className="brand-tag">{subtitle}</span>

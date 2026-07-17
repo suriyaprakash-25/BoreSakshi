@@ -54,7 +54,9 @@ export default function AuthScreen({ mode }) {
       <AppHeader subtitle="Rig operator access" />
       <div className="auth-wrap op-anim">
         <div className="auth-card">
-          <div className="auth-mark"><Droplets size={26} strokeWidth={2} /></div>
+          <div className="auth-mark">
+            <img src="/logo.png" alt="BoreSakshi Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', transform: 'scale(1.8)' }} />
+          </div>
           <h1 className="auth-title">{isSignup ? "Create operator account" : "Operator sign in"}</h1>
           <p className="auth-sub">
             {isSignup

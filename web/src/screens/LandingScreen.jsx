@@ -12,7 +12,7 @@ import { getLedger } from "../api.js";
 
 export default function LandingScreen() {
   const [ledger, setLedger] = useState(null);
-  useEffect(() => { getLedger().then(setLedger).catch(() => {}); }, []);
+  useEffect(() => { getLedger().then(setLedger).catch(() => { }); }, []);
 
   return (
     <div className="lp">
@@ -22,13 +22,6 @@ export default function LandingScreen() {
         {/* hero */}
         <section className="lp-hero-split">
           <div className="lp-hero-text">
-            <span className="lp-eyebrow"><Droplets size={15} strokeWidth={2.4} /> Groundwater intelligence for rural India</span>
-            <h1 className="lp-h1">Know before you drill.</h1>
-            <p className="lp-lead">
-              A borewell is a ₹1.5–4 lakh bet made on guesswork. BoreSakshi turns real
-              drilled outcomes into an AI prediction you can trust — success odds, depth
-              and yield for any location, with our accuracy published in the open.
-            </p>
             <div className="lp-cta">
               <Link to="/" className="btn btn-primary btn-lg">
                 <MapPin size={19} strokeWidth={2.2} /> Check a location
@@ -42,24 +35,6 @@ export default function LandingScreen() {
           <div className="lp-hero-visual">
             <div className="lp-orb lp-orb-1"></div>
             <div className="lp-orb lp-orb-2"></div>
-            
-            <div className="lp-floating-card lp-float-1">
-              <div className="lp-float-icon" style={{background: 'var(--teal-soft)', color: 'var(--teal)'}}><Cpu size={20} /></div>
-              <p className="lp-float-title">AI Prediction</p>
-              <p className="lp-float-sub">87% Success Probability</p>
-            </div>
-            
-            <div className="lp-floating-card lp-float-2">
-              <div className="lp-float-icon" style={{background: 'rgba(11, 232, 129, 0.1)', color: 'var(--mint-ink)'}}><CheckCircle2 size={20} /></div>
-              <p className="lp-float-title">Verified Outcome</p>
-              <p className="lp-float-sub">Logged by rig operator</p>
-            </div>
-            
-            <div className="lp-floating-card lp-float-3">
-              <div className="lp-float-icon" style={{background: 'rgba(0, 168, 255, 0.1)', color: 'var(--water)'}}><Droplets size={20} /></div>
-              <p className="lp-float-title">Expected Yield</p>
-              <p className="lp-float-sub">1.5 - 2.5 inches</p>
-            </div>
           </div>
         </section>
 
@@ -111,7 +86,7 @@ export default function LandingScreen() {
             <div className="lp-ledger-copy">
               <p>
                 Other tools predict and move on. <strong>We score every prediction
-                against what was actually drilled</strong> — and publish the running
+                  against what was actually drilled</strong> — and publish the running
                 accuracy for anyone to inspect. Hits and misses, no cherry-picking.
               </p>
               <ul className="lp-checks">
