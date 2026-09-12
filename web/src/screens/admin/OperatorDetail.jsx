@@ -11,6 +11,7 @@ import LogFilters from "../../components/LogFilters.jsx";
 import LogItem from "../../components/LogItem.jsx";
 import { useAdminData } from "../../adminData.jsx";
 import { downloadCSV } from "../../csv.js";
+import toast from "react-hot-toast";
 import {
   successRate, averageDepth, logsThisWeek, trustScore, filterLogs, fmtDate,
 } from "../../metrics.js";
@@ -55,9 +56,17 @@ export default function OperatorDetail() {
   const rate = successRate(opLogs);
   const adminActions = { flagLog, clearFlag, setLogVerified };
 
-  async function act(fn) {
+  async function act(fn, successMsg) {
     setBusy(true);
-    try { await fn(); setConfirming(null); } catch (e) { alert(e.message); } finally { setBusy(false); }
+    try { 
+      await fn(); 
+      setConfirming(null); 
+      if (successMsg) toast.success(successMsg);
+    } catch (e) { 
+      toast.error(e.message); 
+    } finally { 
+      setBusy(false); 
+    }
   }
 
   return (
@@ -79,7 +88,7 @@ export default function OperatorDetail() {
 
             <div className="detail-actions">
               <button className={`btn btn-ghost btn-sm ${operator.verified ? "is-on" : ""}`} disabled={busy}
-                onClick={() => act(() => setOperatorVerified(operator.id, !operator.verified))}>
+                onClick={() => act(() => setOperatorVerified(operator.id, !operator.verified), operator.verified ? "Operator unverified" : "Operator verified successfully")}>
                 <ShieldCheck size={15} strokeWidth={2.2} /> {operator.verified ? "Remove verification" : "Verify operator"}
               </button>
 
@@ -87,7 +96,7 @@ export default function OperatorDetail() {
                 <span className="confirm-inline">
                   {deactivated ? "Reactivate this account?" : "Deactivate this account?"}
                   <button className="btn btn-primary btn-sm" disabled={busy}
-                    onClick={() => act(() => setOperatorStatus(operator.id, deactivated ? "active" : "deactivated"))}>
+                    onClick={() => act(() => setOperatorStatus(operator.id, deactivated ? "active" : "deactivated"), deactivated ? "Operator reactivated" : "Operator deactivated")}>
                     Yes, {deactivated ? "reactivate" : "deactivate"}
                   </button>
                   <button className="btn btn-ghost btn-sm" onClick={() => setConfirming(null)}>Cancel</button>

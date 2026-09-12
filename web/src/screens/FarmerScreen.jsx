@@ -3,6 +3,7 @@ import MapView from "../components/MapView.jsx";
 import PredictionPanel from "../components/PredictionPanel.jsx";
 import AppHeader from "../components/AppHeader.jsx";
 import { getPrediction, getBorewells, getLedger } from "../api.js";
+import toast from "react-hot-toast";
 
 const DEFAULT_CENTER = [11.36, 77.8]; // Namakkal / Tiruchengode belt
 
@@ -44,11 +45,11 @@ export default function FarmerScreen() {
           handlePick(lat, lng);
         },
         (err) => {
-          alert("Could not get current location: " + err.message);
+          toast.error("Could not get current location: " + err.message);
         }
       );
     } else {
-      alert("Geolocation is not supported by this browser.");
+      toast.error("Geolocation is not supported by this browser.");
     }
   }
 

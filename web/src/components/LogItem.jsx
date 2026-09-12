@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   MapPin, Droplets, DropletOff, Ruler, Waves, Layers, BadgeCheck, Flag, FlagOff,
 } from "lucide-react";
+import toast from "react-hot-toast";
 import { placeLabel, fmtDate } from "../metrics.js";
 
 export default function LogItem({ log, showOperator = false, adminActions = null }) {
@@ -13,9 +14,16 @@ export default function LogItem({ log, showOperator = false, adminActions = null
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function run(fn) {
+  async function run(fn, successMsg) {
     setBusy(true);
-    try { await fn(); } catch (e) { alert(e.message); } finally { setBusy(false); }
+    try { 
+      await fn(); 
+      if (successMsg) toast.success(successMsg);
+    } catch (e) { 
+      toast.error(e.message); 
+    } finally { 
+      setBusy(false); 
+    }
   }
 
   return (
@@ -74,7 +82,7 @@ export default function LogItem({ log, showOperator = false, adminActions = null
               autoFocus
             />
             <button className="btn btn-primary btn-sm" disabled={busy}
-              onClick={() => run(async () => { await adminActions.flagLog(log.id, reason); setFlagging(false); setReason(""); })}>
+              onClick={() => run(async () => { await adminActions.flagLog(log.id, reason); setFlagging(false); setReason(""); }, "Log flagged successfully")}>
               <Flag size={14} strokeWidth={2.2} /> Flag
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => { setFlagging(false); setReason(""); }}>Cancel</button>
@@ -83,7 +91,7 @@ export default function LogItem({ log, showOperator = false, adminActions = null
           <div className="log-actions">
             {log.flagged ? (
               <button className="btn btn-ghost btn-sm" disabled={busy}
-                onClick={() => run(() => adminActions.clearFlag(log.id))}>
+                onClick={() => run(() => adminActions.clearFlag(log.id), "Flag cleared")}>
                 <FlagOff size={14} strokeWidth={2.2} /> Clear flag
               </button>
             ) : (
@@ -92,7 +100,7 @@ export default function LogItem({ log, showOperator = false, adminActions = null
               </button>
             )}
             <button className={`btn btn-ghost btn-sm ${log.verified ? "is-on" : ""}`} disabled={busy}
-              onClick={() => run(() => adminActions.setLogVerified(log.id, !log.verified))}>
+              onClick={() => run(() => adminActions.setLogVerified(log.id, !log.verified), log.verified ? "Log unverified" : "Log verified successfully")}>
               <BadgeCheck size={14} strokeWidth={2.2} /> {log.verified ? "Unverify" : "Verify"}
             </button>
           </div>

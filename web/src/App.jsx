@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "./auth.jsx";
 import { OperatorDataProvider } from "./operatorData.jsx";
 import { AdminDataProvider } from "./adminData.jsx";
@@ -26,7 +27,19 @@ import RequireAdmin from "./components/RequireAdmin.jsx";
 //   /admin/*   admin-only (RequireAdmin) — distinct nav, platform oversight
 export default function App() {
   return (
-    <AuthProvider>
+    <>
+      <Toaster 
+        position="bottom-right" 
+        toastOptions={{ 
+          style: { 
+            background: 'var(--card-glass)', 
+            color: 'var(--ink)', 
+            backdropFilter: 'blur(10px)', 
+            border: '1px solid var(--line)' 
+          } 
+        }} 
+      />
+      <AuthProvider>
       <OperatorDataProvider>
         <AdminDataProvider>
           <BrowserRouter>
@@ -52,5 +65,6 @@ export default function App() {
         </AdminDataProvider>
       </OperatorDataProvider>
     </AuthProvider>
+    </>
   );
 }

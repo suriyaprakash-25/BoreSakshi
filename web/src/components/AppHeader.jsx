@@ -6,6 +6,7 @@
 import { NavLink, Link } from "react-router-dom";
 import { Droplets, LayoutDashboard, MapPin, ClipboardList, Scale, History, Users, Flag } from "lucide-react";
 import AuthBadge from "./AuthBadge.jsx";
+import ThemeToggle from "./ThemeToggle.jsx";
 import { useAuth } from "../auth.jsx";
 
 const PUBLIC_TABS = [
@@ -70,6 +71,7 @@ export default function AppHeader({ subtitle = "Know before you drill", children
 
       <div className="topbar-slot">
         {children}
+        <ThemeToggle />
         <AuthBadge />
       </div>
     </header>
