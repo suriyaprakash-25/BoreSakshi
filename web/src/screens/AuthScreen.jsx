@@ -29,7 +29,7 @@ export default function AuthScreen({ mode }) {
 
     // client-side checks give instant feedback; the server re-validates anyway
     if (isSignup) {
-      if (password.length < 6) return setError("Password must be at least 6 characters.");
+      if (password.length < 8) return setError("Password must be at least 8 characters.");
       if (password !== confirmPassword) return setError("Passwords do not match.");
     }
 
@@ -89,7 +89,7 @@ export default function AuthScreen({ mode }) {
               <input
                 className="op-input" type="password" value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder={isSignup ? "At least 6 characters" : "Your password"}
+                placeholder={isSignup ? "Min 8 chars, A-Z, 0-9, symbol" : "Your password"}
                 autoComplete={isSignup ? "new-password" : "current-password"}
               />
             </label>

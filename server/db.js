@@ -52,11 +52,11 @@ export const db = {
     return record;
   },
   async getBorewells() {
-    return borewells.find({}, NO_MONGO_ID).toArray();
+    return borewells.find({}, NO_MONGO_ID).limit(5000).toArray();
   },
   // admin: every log, newest first (flag/verify fields included)
   async getAllBorewells() {
-    return borewells.find({}, NO_MONGO_ID).sort({ createdAt: -1 }).toArray();
+    return borewells.find({}, NO_MONGO_ID).sort({ createdAt: -1 }).limit(5000).toArray();
   },
   async updateBorewell(id, patch) {
     const result = await borewells.findOneAndUpdate(
@@ -68,7 +68,7 @@ export const db = {
   },
   // one operator's own logs, newest first (for their dashboard + history)
   async getBorewellsByOperator(operatorId) {
-    return borewells.find({ operatorId }, NO_MONGO_ID).sort({ createdAt: -1 }).toArray();
+    return borewells.find({ operatorId }, NO_MONGO_ID).sort({ createdAt: -1 }).limit(5000).toArray();
   },
 
   // --- predictions we issued (for the accountability ledger) ---
@@ -77,7 +77,7 @@ export const db = {
     return record;
   },
   async getPredictions() {
-    return predictions.find({}, NO_MONGO_ID).toArray();
+    return predictions.find({}, NO_MONGO_ID).limit(5000).toArray();
   },
   async updatePrediction(id, patch) {
     const result = await predictions.findOneAndUpdate(
@@ -102,7 +102,7 @@ export const db = {
   },
   // admin: all accounts, without the password hash
   async getOperators() {
-    return operators.find({}, { projection: { _id: 0, passwordHash: 0 } }).sort({ createdAt: -1 }).toArray();
+    return operators.find({}, { projection: { _id: 0, passwordHash: 0 } }).sort({ createdAt: -1 }).limit(5000).toArray();
   },
   // admin can change status/verified only (never role — no in-app role management)
   async updateOperator(id, patch) {
@@ -118,7 +118,7 @@ export const db = {
   async getAssignmentsByOperator(operatorId, { status } = {}) {
     const query = { operatorId };
     if (status) query.status = status;
-    return assignments.find(query, NO_MONGO_ID).sort({ assignedAt: 1 }).toArray();
+    return assignments.find(query, NO_MONGO_ID).sort({ assignedAt: 1 }).limit(5000).toArray();
   },
   async countAssignmentsByOperator(operatorId) {
     return assignments.countDocuments({ operatorId });

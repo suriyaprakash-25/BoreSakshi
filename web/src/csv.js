@@ -19,8 +19,15 @@ const COLUMNS = [
   ["Verified", (l) => (l.verified ? "yes" : "no")],
 ];
 
-// wrap every field in quotes and double any internal quotes (RFC-4180 safe)
-const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+// wrap every field in quotes and double any internal quotes (RFC-4180 safe).
+// Also prepend a single quote to prevent CSV formula injection in Excel.
+const cell = (v) => {
+  let str = String(v ?? "");
+  if (/^[=+\-@]/.test(str)) {
+    str = "'" + str;
+  }
+  return `"${str.replace(/"/g, '""')}"`;
+};
 
 export function toCSV(logs) {
   const header = COLUMNS.map((c) => cell(c[0])).join(",");

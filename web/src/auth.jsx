@@ -1,7 +1,7 @@
 // auth.jsx — operator session context. Backed by localStorage (see api.js).
 // Farmers never hit this; only the /log flow reads it.
 import { createContext, useContext, useState, useCallback } from "react";
-import { getAuth, setAuth as persist, clearAuth } from "./api.js";
+import { getAuth, setAuth as persist, clearAuth, signout as apiSignout } from "./api.js";
 
 const AuthContext = createContext(null);
 
@@ -9,7 +9,7 @@ export function AuthProvider({ children }) {
   const [auth, setAuthState] = useState(getAuth); // { token, operator } | null
 
   const signIn = useCallback((data) => { persist(data); setAuthState(data); }, []);
-  const signOut = useCallback(() => { clearAuth(); setAuthState(null); }, []);
+  const signOut = useCallback(() => { apiSignout(); clearAuth(); setAuthState(null); }, []);
 
   const value = {
     token: auth?.token || null,

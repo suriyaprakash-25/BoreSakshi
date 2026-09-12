@@ -7,15 +7,12 @@ import jwt from "jsonwebtoken";
 import { nanoid } from "nanoid";
 import { db } from "./db.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "boresakshi-dev-secret-change-me";
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 
-if (!process.env.JWT_SECRET) {
-  if (process.env.NODE_ENV === "production") {
-    console.error("[BoreSakshi] FATAL: JWT_SECRET is not set in production.");
-    process.exit(1);
-  }
-  console.warn("[BoreSakshi] WARNING: JWT_SECRET not set — using an insecure dev default. Set it in server/.env");
+if (!JWT_SECRET) {
+  console.error("[BoreSakshi] FATAL: JWT_SECRET is not set. Set it in server/.env");
+  process.exit(1);
 }
 
 // safe view of an account — never the passwordHash. Older accounts may predate
@@ -58,11 +55,25 @@ export async function signup(req, res) {
     verified: false,
     createdAt: new Date().toISOString(),
   };
-  await db.addOperator(operator);
+  try {
+    await db.addOperator(operator);
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({ error: "An account with this phone already exists — sign in instead" });
+    }
+    throw err;
+  }
   // starter work queue so the new operator's dashboard has assigned sites to log
   await db.seedAssignmentsForOperator(operator.id);
 
-  res.status(201).json({ token: issueToken(operator), operator: publicOperator(operator) });
+  const token = issueToken(operator);
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+  res.status(201).json({ operator: publicOperator(operator) });
 }
 
 export async function signin(req, res) {
@@ -82,7 +93,23 @@ export async function signin(req, res) {
     return res.status(403).json({ error: "This account has been deactivated. Please contact the administrator." });
   }
 
-  res.json({ token: issueToken(operator), operator: publicOperator(operator) });
+  const token = issueToken(operator);
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+  res.json({ operator: publicOperator(operator) });
+}
+
+export async function signout(req, res) {
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+  });
+  res.json({ success: true });
 }
 
 // middleware: require a valid Bearer token AND an active account. Re-reads the
@@ -91,7 +118,10 @@ export async function signin(req, res) {
 export async function requireAuth(req, res, next) {
   try {
     const header = req.headers.authorization || "";
-    const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+    let token = header.startsWith("Bearer ") ? header.slice(7) : null;
+    if (!token && req.cookies && req.cookies.token) {
+      token = req.cookies.token;
+    }
     if (!token) return res.status(401).json({ error: "Sign in to continue" });
 
     let payload;

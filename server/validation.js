@@ -3,7 +3,13 @@
 // a clean 400 before any handler/DB logic runs.
 import { z } from "zod";
 
-const password = z.string().min(6, "Password must be at least 6 characters").max(128);
+const password = z.string()
+  .min(8, "Password must be at least 8 characters")
+  .max(128)
+  .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+  .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+  .regex(/[0-9]/, "Password must contain at least one number")
+  .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character");
 const phone = z.string().min(1, "Phone is required").max(20);
 
 // lat/lng: must be real numbers in range. z.number() rejects non-numbers, and the

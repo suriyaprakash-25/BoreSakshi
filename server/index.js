@@ -2,10 +2,12 @@
 import "dotenv/config"; // load server/.env before anything reads process.env
 import express from "express";
 import cors from "cors";
+import morgan from "morgan";
+import cookieParser from "cookie-parser";
 import { nanoid } from "nanoid";
 import { db, connectDB, pingDB } from "./db.js";
 import { predictBorewell, distanceKm, NEAR_KM } from "./predict.js";
-import { signup, signin, requireAuth, requireAdmin } from "./auth.js";
+import { signup, signin, signout, requireAuth, requireAdmin } from "./auth.js";
 import {
   validate, signupSchema, signinSchema, predictSchema, borewellSchema,
   adminOperatorPatchSchema, adminLogPatchSchema,
@@ -15,11 +17,17 @@ import {
 } from "./middleware.js";
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  credentials: true
+}));
+app.use(cookieParser());
 app.use(express.json({ limit: "10kb" })); // reject oversized payloads (→ 413)
+app.use(morgan("dev")); // request logging
 
-// Behind a reverse proxy (Render/Railway) set TRUST_PROXY=1 so client IPs — and
-// therefore IP rate limiting — are read correctly. Left off locally.
+// Behind a reverse proxy (Render/Railway, AWS ALB) set TRUST_PROXY=1 so client IPs
+// and therefore IP rate limiting — are read correctly. Otherwise, rate limiters
+// will see the proxy IP and globally throttle all users. Left off locally.
 if (process.env.TRUST_PROXY) app.set("trust proxy", Number(process.env.TRUST_PROXY));
 
 const PORT = process.env.PORT || 4000;
@@ -43,6 +51,7 @@ app.post(
   signinBruteLimiter,          // then count failed attempts per phone number
   asyncHandler(signin)
 );
+app.post("/api/auth/signout", asyncHandler(signout));
 
 // ----------------------------------------------------------------------------
 // 1) LOG A BOREWELL (rig operator submits a completed job = verified outcome)
