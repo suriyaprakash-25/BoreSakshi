@@ -12,8 +12,8 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let active = true;
     getSession()
-      .then((currentOperator) => {
-        if (active) setOperator(currentOperator);
+      .then((session) => {
+        if (active) setOperator(session?.operator || null);
       })
       .catch(() => {
         if (active) setOperator(null);
