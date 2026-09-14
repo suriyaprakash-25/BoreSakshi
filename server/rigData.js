@@ -7,6 +7,10 @@ export function summarizeStrata(geologicalLayers, fallback = "") {
   return names.length ? names.join(" → ").slice(0, 120) : String(fallback || "").slice(0, 120);
 }
 
+export function isOperatorSubmission(record) {
+  return Boolean(record?.rigSubmissionSchemaVersion) || record?.provenance?.sourceType === "operator";
+}
+
 export function buildOperatorBorewellRecord({ id, body, operator, evidence, submittedAt }) {
   const drilledAt = `${body.drillingDate}T00:00:00.000Z`;
   const record = {
@@ -71,7 +75,16 @@ export function buildOperatorBorewellRecord({ id, body, operator, evidence, subm
   return record;
 }
 
-export function buildVerificationPatch({ verified, adminName, now }) {
+export function buildVerificationPatch({ record = null, verified, adminName, now }) {
+  // Phase 8's pending/trusted eligibility transition applies only to operator-origin
+  // submissions. Government/imported Phase 2 records keep their established
+  // eligibility/review semantics when an admin toggles the existing verified flag.
+  if (!isOperatorSubmission(record)) {
+    return verified
+      ? { verified: true, verifiedAt: now, verifiedBy: adminName }
+      : { verified: false, verifiedAt: null, verifiedBy: null };
+  }
+
   if (verified) {
     return {
       verified: true,
