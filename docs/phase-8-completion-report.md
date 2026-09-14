@@ -359,11 +359,13 @@ GET    /api/borewells/:borewellId/evidence/:evidenceId
 
 ## Verification performed
 
-Runtime code was verified on commit:
+The final PR head after this report-only metadata update is the commit containing this document. Runtime code was last changed and fully verified on:
 
 ```text
 4663e947003cb23f581dcc6cee34073a51f05d92
 ```
+
+The report commit contains no runtime changes. The full CI stack was rerun after the initial report commit and passed before this metadata-only wording update.
 
 ### Phase 8 Rig Operator Data workflow
 
@@ -424,7 +426,7 @@ production build success
 
 ### Preceding-phase compatibility
 
-On the same Phase 8 runtime code head:
+The post-implementation/report CI stack also passed:
 
 - Phase 4 ML workflow: **success**
 - Phase 5 Scientific Evaluation workflow: **success**
