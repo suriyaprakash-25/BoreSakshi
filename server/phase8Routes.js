@@ -18,8 +18,13 @@ function decodeFilename(value) {
 
 async function closeNearbyPredictions({ db, record, distanceKm, NEAR_KM, now }) {
   const openPreds = (await db.getPredictions()).filter((p) => p.actual == null);
+  const drilledAtMs = Date.parse(record.drilledAt || record.drilledDate || "");
   let scored = 0;
   for (const prediction of openPreds) {
+    const predictionAtMs = Date.parse(prediction.createdAt || "");
+    // Accountability requires the prediction to pre-date the observed outcome.
+    // If either timestamp is unverifiable, skip rather than manufacture a score.
+    if (!Number.isFinite(drilledAtMs) || !Number.isFinite(predictionAtMs) || predictionAtMs > drilledAtMs) continue;
     if (distanceKm({ lat: record.lat, lng: record.lng }, { lat: prediction.lat, lng: prediction.lng }) > NEAR_KM) continue;
     const predictedSuccess = prediction.successProbability >= 50;
     await db.updatePrediction(prediction.id, {
