@@ -39,6 +39,7 @@
 | Vector extraction | Complete — GeoJSON lines/polygons |
 | Spatial leakage controls | Complete — deterministic spatial block IDs |
 | Temporal leakage controls | Complete — strict pre-target borewell history + dynamic layer cutoff |
+| Phase 2 eligibility gate | Complete — invalid/ineligible/duplicate/unapproved staged rows rejected |
 | Target leakage prevention | Complete — labels stored separately; target excluded from neighbor features |
 | Missing feature coverage | Complete — no silent imputation; per-row + per-feature coverage reports |
 | Deterministic reproducibility | Complete — source checksums, feature hashes, row hashes, dataset digest |
@@ -72,6 +73,7 @@ Training rows are built at the historical time of each target borewell.
 - Future or same-time wells are excluded.
 - Rainfall/NDVI/NDWI/LULC snapshots must have `observedAt` and cannot be later than the target time.
 - Missing/ambiguous target event dates cause the row to be skipped.
+- Phase 2 records explicitly marked invalid, duplicate, ineligible, rejected, or otherwise unapproved are rejected as training targets.
 - Each row receives a spatial block ID for grouped/spatial validation in Phase 4.
 
 ## Data lineage and reproducibility
@@ -95,11 +97,11 @@ This prevents source substitution or silent feature drift from masquerading as t
 
 The Phase 3 pure test suite was executed locally after implementation:
 
-- **13 tests passed**
+- **14 tests passed**
 - **0 failed**
 - **0 skipped**
 
-Coverage includes raster parsing/sampling, terrain derivatives, polygon lookup, line distance/density, temporal source selection, target/future-well exclusion, manifest provenance validation, spatial block stability, full cross-domain feature extraction, training-row label separation, causal ordering between targets, invalid-date rejection and deterministic dataset digests.
+Coverage includes raster parsing/sampling, terrain derivatives, polygon lookup, line distance/density, temporal source selection, target/future-well exclusion, manifest provenance validation, spatial block stability, full cross-domain feature extraction, training-row label separation, causal ordering between targets, invalid-date rejection, Phase 2 eligibility enforcement and deterministic dataset digests.
 
 All new Phase 3 JavaScript files were also syntax-checked with `node --check` during implementation.
 
