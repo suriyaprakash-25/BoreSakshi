@@ -35,7 +35,7 @@ const PORT = process.env.PORT || 4000;
 
 // Public borewell discovery is intentionally approximate: the map still works
 // while avoiding publication of a farmer's exact drilling location or operator identity.
-const toPublicBorewell = ({ operatorId, operatorName, lat, lng, ...record }) => ({
+const toPublicBorewell = ({ operatorId, operatorName, createdBy, verifiedBy, lat, lng, ...record }) => ({
   ...record,
   lat: Math.round(lat * 100) / 100,
   lng: Math.round(lng * 100) / 100,
@@ -71,7 +71,10 @@ app.get("/api/auth/session", requireAuth, asyncHandler(async (req, res) => {
 // 1) LOG A BOREWELL (rig operator submits a completed job for admin review)
 // ----------------------------------------------------------------------------
 app.post("/api/borewells", requireAuth, requireCsrf, validate(borewellSchema), asyncHandler(async (req, res) => {
-  const { lat, lng, placeName, depthFt, strata, waterStrikeFt, yieldLpm, success, language, predictionId } = req.body;
+  const {
+    lat, lng, placeName, depthFt, strata, waterStrikeFt, yieldLpm, success, language,
+    gpsAccuracyM, drillingDate, predictionId,
+  } = req.body;
 
   // Validate a requested accountability link before storing the field record so
   // a bad link cannot leave a partially accepted borewell submission behind.
@@ -85,26 +88,50 @@ app.post("/api/borewells", requireAuth, requireCsrf, validate(borewellSchema), a
     }
   }
 
+  const createdAt = new Date().toISOString();
+  const observedAt = drillingDate || createdAt;
+  const status = success ? "ACTIVE" : "DRY";
   const record = {
     id: nanoid(10),
+    publicId: "BW-" + nanoid(10).toUpperCase(),
     lat, lng,
+    gpsAccuracyM: gpsAccuracyM ?? null,
     placeName: placeName?.trim() || "",
+    drillingDate: observedAt,
     depthFt: depthFt ?? null,
     strata: strata ?? "",
+    geology: strata ?? "",
     waterStrikeFt: waterStrikeFt ?? null,
     yieldLpm: yieldLpm ?? null,
     success,
+    status,
     // identity comes from the signed-in operator, not free-text client input
     operatorId: req.operator.id,
     operatorName: req.operator.name,
+    createdBy: req.operator.id,
     language: language ?? "ta",
-    // admin moderation fields — start clean, changed only via admin routes
+    // Moderation is separate from borewell status. The legacy verified field
+    // remains for existing clients and old records during this migration.
+    verificationStatus: "SUBMITTED",
     flagged: false,
     flagReason: "",
     verified: false,
-    createdAt: new Date().toISOString(),
+    createdAt,
   };
-  await db.addBorewell(record);
+  const drillingObservation = {
+    id: nanoid(10),
+    borewellId: record.id,
+    type: "DRILLING",
+    observedAt,
+    depthFt: record.depthFt,
+    waterStrikeFt: record.waterStrikeFt,
+    yieldLpm: record.yieldLpm,
+    status: record.status,
+    geology: record.geology,
+    createdBy: req.operator.id,
+    createdAt,
+  };
+  await db.addBorewellWithObservation(record, drillingObservation);
 
   // WORK QUEUE: if this log lands near one of the operator's still-pending
   // assigned sites, close that assignment out.
