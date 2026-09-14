@@ -50,6 +50,9 @@ export const borewellSchema = z.object({
   yieldLpm: z.number().min(0).max(100000).nullable().optional(),
   success: z.boolean({ error: "success (true/false) is required" }),
   language: z.string().max(10).optional(),
+  // Optional explicit linkage: a field outcome may score only this prediction.
+  // Nearby location alone is not enough to establish an accountable outcome.
+  predictionId: z.string().min(1).max(40).optional(),
 });
 
 // admin can change an operator's status and verified flag — never role.
