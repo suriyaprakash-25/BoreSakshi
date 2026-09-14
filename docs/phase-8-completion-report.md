@@ -359,17 +359,19 @@ GET    /api/borewells/:borewellId/evidence/:evidenceId
 
 ## Verification performed
 
-The final PR head after this report-only metadata update is the commit containing this document. Runtime code was last changed and fully verified on:
+Runtime code was last changed and fully verified on:
 
 ```text
 4663e947003cb23f581dcc6cee34073a51f05d92
 ```
 
-The report commit contains no runtime changes. The full CI stack was rerun after the initial report commit and passed before this metadata-only wording update.
+The subsequent commits update only this completion report. The full CI matrix was rerun after the report was added and passed:
 
-### Phase 8 Rig Operator Data workflow
-
-Result: **success**.
+- Phase 8 Rig Operator Data: **success**
+- Phase 7 Real Prediction Engine: **success**
+- Phase 6 ML Service: **success**
+- Phase 5 Scientific Evaluation: **success**
+- Phase 4 ML: **success**
 
 ### Phase 8 trust-boundary suite
 
@@ -423,15 +425,6 @@ The complete farmer/operator/admin Vite application built successfully:
 1872 modules transformed
 production build success
 ```
-
-### Preceding-phase compatibility
-
-The post-implementation/report CI stack also passed:
-
-- Phase 4 ML workflow: **success**
-- Phase 5 Scientific Evaluation workflow: **success**
-- Phase 6 ML Service workflow: **success**
-- Phase 7 Real Prediction Engine workflow: **success**
 
 ## CI findings corrected during implementation
 
