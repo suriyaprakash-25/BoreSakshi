@@ -2,6 +2,7 @@
 // body through a schema; unknown keys are stripped and bad input is rejected as
 // a clean 400 before any handler/DB logic runs.
 import { z } from "zod";
+import { SOURCE_TYPES, DATASET_KINDS } from "./ingestion.js";
 
 const password = z.string()
   .min(8, "Password must be at least 8 characters")
@@ -67,6 +68,39 @@ export const adminLogPatchSchema = z.object({
   verified: z.boolean().optional(),
 }).refine((d) => d.flagged !== undefined || d.verified !== undefined, {
   message: "Nothing to update",
+});
+
+// Phase 2 ingestion provenance travels in query parameters for text/csv uploads.
+export const ingestionSourceSchema = z.object({
+  sourceType: z.enum(SOURCE_TYPES),
+  sourceName: z.string().trim().min(1, "sourceName is required").max(120),
+  sourceReference: z.string().trim().max(500).optional().default(""),
+  license: z.string().trim().max(120).optional().default(""),
+  datasetName: z.string().trim().max(160).optional().default(""),
+});
+
+export const ingestionReviewSchema = z.object({
+  decision: z.enum(["approve", "reject"]),
+  reviewNote: z.string().trim().max(500).optional().default(""),
+});
+
+export const datasetAssetSchema = z.object({
+  datasetKind: z.enum(DATASET_KINDS),
+  sourceName: z.string().trim().min(1, "sourceName is required").max(160),
+  sourceReference: z.string().trim().max(500).optional().default(""),
+  license: z.string().trim().max(160).optional().default(""),
+  storageProvider: z.enum(["s3", "gcs", "azure_blob", "local", "other"]),
+  objectKey: z.string().trim().min(1, "objectKey is required").max(500),
+  mediaType: z.string().trim().min(1, "mediaType is required").max(120),
+  byteSize: z.number().int().min(0).max(10_000_000_000),
+  sha256: z.string().regex(/^[a-fA-F0-9]{64}$/, "sha256 must be a 64-character hex digest"),
+  spatialCoverage: z.string().trim().max(500).optional().default(""),
+  temporalCoverage: z.string().trim().max(200).optional().default(""),
+});
+
+export const datasetAssetReviewSchema = z.object({
+  decision: z.enum(["approve", "reject"]),
+  reviewNote: z.string().trim().max(500).optional().default(""),
 });
 
 // middleware factory: validate req.body against a schema, replacing it with the
