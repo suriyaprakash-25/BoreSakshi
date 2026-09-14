@@ -1,5 +1,9 @@
 // api.js — all backend calls in one place.
 const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
+let csrfToken = null;
+
+const csrfHeaders = () => csrfToken ? { "X-CSRF-Token": csrfToken } : {};
+const setCsrfToken = (token) => { csrfToken = token || null; };
 
 async function readError(res, fallback) {
   const body = await res.json().catch(() => ({}));
@@ -40,7 +44,9 @@ export async function signup({ name, phone, password, confirmPassword }) {
     body: JSON.stringify({ name, phone, password, confirmPassword }),
   });
   if (!res.ok) throw await readError(res, "Could not create account");
-  return res.json(); // { operator }
+  const data = await res.json();
+  setCsrfToken(data.csrfToken);
+  return data; // { operator, csrfToken }
 }
 
 export async function signin({ phone, password }) {
@@ -51,14 +57,18 @@ export async function signin({ phone, password }) {
     body: JSON.stringify({ phone, password }),
   });
   if (!res.ok) throw await readError(res, "Could not sign in");
-  return res.json(); // { operator }
+  const data = await res.json();
+  setCsrfToken(data.csrfToken);
+  return data; // { operator, csrfToken }
 }
 
 export async function signout() {
   await fetch(`${API}/api/auth/signout`, {
     method: "POST",
+    headers: csrfHeaders(),
     credentials: "include",
   }).catch(() => {});
+  setCsrfToken(null);
 }
 
 // Restore the safe operator profile from the HTTP-only cookie. A missing or
@@ -68,7 +78,8 @@ export async function getSession() {
   if (res.status === 401 || res.status === 403) return null;
   if (!res.ok) throw await readError(res, "Could not restore your session");
   const data = await res.json();
-  return data.operator || null;
+  setCsrfToken(data.csrfToken);
+  return data;
 }
 
 // ---- operator flow (auth required) -----------------------------------------
@@ -77,7 +88,7 @@ export async function getSession() {
 export async function logBorewell(payload) {
   const res = await fetch(`${API}/api/borewells`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...csrfHeaders() },
     credentials: "include",
     body: JSON.stringify(payload),
   });
@@ -115,7 +126,7 @@ export async function adminGetLogs() {
 export async function adminPatchOperator(id, patch) {
   const res = await fetch(`${API}/api/admin/operators/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...csrfHeaders() },
     credentials: "include",
     body: JSON.stringify(patch),
   });
