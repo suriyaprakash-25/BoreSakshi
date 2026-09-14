@@ -1,22 +1,37 @@
-# BoreSakshi — Backend (MongoDB)
+# BoreSakshi — Backend (MongoDB + ML orchestration)
 
-API for the borewell logging tool, farmer prediction screen, public accountability ledger, the review-gated Phase 2 real-data ingestion pipeline, and the Phase 3 geospatial feature-engineering pipeline. Node + Express + **MongoDB**.
+Node + Express + MongoDB API for borewell logging, farmer predictions, the public accountability ledger, trusted-data ingestion, and Phase 6 orchestration of the Python ML service.
 
 - Connection: `mongodb://localhost:27017/`
 - Database: `BoreSakshi`
 - Core collections: `borewells`, `predictions`, `operators`, `assignments`
 - Phase 2 collections: `ingestion_batches`, `staged_borewells`, `ingestion_audit`, `dataset_assets`
 - Phase 3 output: versioned offline ML-ready feature artifacts under `feature-artifacts/` (gitignored)
-- Phase 4 training: Python package under `../ml/` consumes Phase 3 artifacts and produces checksummed candidate model artifacts
+- Phase 4/5/6 ML stack: `../ml/`
+
+## Runtime prediction path
+
+```text
+POST /api/predict
+  → load nearby borewells
+  → keep verified + unflagged + dataset-eligible records only
+  → call Python POST /ml/predict
+  → map calibrated probability + depth/yield ranges into the existing farmer contract
+  → persist prediction/model metadata
+  → later close it against a verified drilling outcome in the accountability ledger
+```
+
+If Python is unavailable, times out, is not approved/ready, rejects low feature coverage, or the circuit breaker is open, the API returns the existing deterministic heuristic only as an explicitly labelled `heuristic_fallback`. It is never presented as ML.
 
 ## Run it
 
-1. Make sure **MongoDB is running** locally (MongoDB Compass connected to `mongodb://localhost:27017/` is enough — collections are created automatically).
+Start the reviewed/approved Python ML service first (see `../ml/README.md`), then:
 
 ```bash
 cd server
 npm install
-cp .env.example .env   # then edit .env — set JWT_SECRET
+cp .env.example .env
+# edit .env — set JWT_SECRET and ML_SERVICE_URL
 node seed.js            # OPTIONAL demo data
 npm start               # http://localhost:4000
 ```
@@ -29,7 +44,10 @@ All secrets live in `server/.env` (gitignored). In production (`NODE_ENV=product
 npm test
 npm run test:phase2
 npm run test:phase3
+npm run test:phase6
 ```
+
+The Phase 6 Node suite covers retry policy, non-retryable model-domain errors, the circuit breaker, ML compatibility mapping, and explicit fallback labeling.
 
 The live Phase 2 HTTP contract test is intentionally write-gated and must target a disposable test database/server:
 
@@ -44,13 +62,53 @@ npm run test:phase2:contract
 
 | Method | Route | Purpose |
 |---|---|---|
-| GET | `/api/health` | Service + Mongo liveness |
-| POST | `/api/predict` | Farmer pin → success %, depth, yield, confidence |
+| GET | `/api/health` | Mongo/API health plus Python ML readiness/circuit metadata |
+| POST | `/api/predict` | Farmer pin → calibrated ML prediction, or explicitly labelled fallback |
 | POST | `/api/borewells` | Authenticated operator logs a completed job |
 | GET | `/api/borewells` | Public map dataset |
 | GET | `/api/ledger` | Public prediction-vs-actual accuracy record |
 | GET | `/api/admin/operators` | Admin operator oversight |
 | GET | `/api/admin/logs` | Admin log oversight |
+
+## Phase 6 Node → Python client
+
+`mlClient.js` uses these environment variables:
+
+```text
+ML_SERVICE_URL=http://127.0.0.1:8000
+ML_SERVICE_TIMEOUT_MS=2500
+ML_SERVICE_RETRIES=1
+ML_CIRCUIT_FAILURE_THRESHOLD=3
+ML_CIRCUIT_COOLDOWN_MS=30000
+```
+
+Retryable transport/5xx/429 failures can trigger the circuit breaker. Model-domain 4xx responses such as `INSUFFICIENT_FEATURE_COVERAGE` are not retried and do not count as service-health failures.
+
+`GET /api/health` keeps Node/Mongo availability separate from ML readiness: the API can remain healthy while reporting the Python service as unavailable and serving a visibly labelled fallback.
+
+## Prediction provenance persisted
+
+Real ML predictions additively retain:
+
+- `predictionSource = "ml"`
+- `modelVersion`
+- `featureVersion`
+- `predictionTimestamp`
+- `uncertainty`
+- `featureCoverage`
+- `coverageWarning`
+- model explanations
+
+Fallback predictions retain:
+
+- `predictionSource = "heuristic_fallback"`
+- `isMock = true`
+- `modelAvailable = false`
+- `modelVersion = null`
+- a visible fallback warning/reason
+- no calibrated uncertainty claim
+
+This metadata is saved with the prediction without changing the ledger's existing success-threshold scoring behavior.
 
 ## Phase 2 ingestion API (admin only)
 
@@ -92,20 +150,12 @@ Only after the review gate is approved:
 
 ```bash
 PHASE2_MIGRATION_APPROVED=YES npm run migrate:phase2:apply
-# rollback uses the per-record backup collection:
 PHASE2_MIGRATION_APPROVED=YES npm run migrate:phase2:rollback
 ```
 
 ## Phase 3 geospatial feature engineering
 
-Phase 3 converts approved borewell records plus real raster/vector layers into a versioned ML-ready dataset. It intentionally runs offline so source licensing, checksums, temporal cutoffs and coverage can be reviewed before model training.
-
-Supported standardized inputs:
-
-- ESRI ASCII Grid rasters (`dem`, flow accumulation, rainfall, NDVI/NDWI, categorical rasters)
-- GeoJSON vectors (drainage, watershed, geology, lineaments, LULC polygons)
-
-The build enforces source SHA-256, license/reference metadata, target-outcome separation, strictly historical nearby-well features, dynamic-layer observation cutoffs, missing-feature coverage reporting and deterministic spatial block IDs.
+Phase 3 converts approved borewell records plus real raster/vector layers into a versioned ML-ready dataset. The same 26-feature contract is re-created at prediction time by the Python Phase 6 feature extractor.
 
 ```bash
 npm run features:build -- \
@@ -114,33 +164,24 @@ npm run features:build -- \
   --out=feature-artifacts/features-v1.json
 ```
 
-The Phase 4 depth target is `waterStrikeFt`, so Phase 3 feature rows now carry it under `labels` separately from total `depthFt`. It is never added to the `features` object.
+See `../docs/phase-3-geospatial-feature-engineering.md`.
 
-Start from `../docs/phase-3-feature-manifest.example.json`. Generated artifacts and raw geospatial data are gitignored by default.
+## Phase 4/5/6 ML stack
 
-See `../docs/phase-3-geospatial-feature-engineering.md` for the feature contract and leakage controls.
+- Phase 4 trains versioned success, water-strike-depth and yield candidates.
+- Phase 5 evaluates them spatially, calibrates success probability, builds conformal ranges and selects candidates pending review.
+- Phase 6 serves the selected checksummed bundle after explicit approval and connects it to this Node API.
 
-## Phase 4 real-model training
+See:
 
-Phase 4 lives under `../ml/`. It trains separate candidate models for success probability, water-strike depth and yield. Candidate artifacts remain offline and unevaluated until Phase 5.
-
-```bash
-cd ../ml
-python -m venv .venv
-# activate environment
-python -m pip install -r requirements-candidates.txt
-python train.py \
-  --dataset ../server/feature-artifacts/features-v1.json \
-  --out artifacts \
-  --run-id phase4-real-v1
-```
-
-See `../docs/phase-4-real-ml-model.md` and `../ml/README.md` for the full training/artifact contract.
+- `../docs/phase-4-real-ml-model.md`
+- `../docs/phase-5-scientific-evaluation.md`
+- `../docs/phase-6-python-ml-service.md`
+- `../ml/README.md`
 
 ## Notes
 
-- **Only `db.js` talks to MongoDB.** `index.js` awaits its methods; `predict.js`, `ingestion.js`, `geospatial.js` and `featurePipeline.js` keep core logic deterministic/testable.
-- **The live API still uses the deterministic mock.** Phase 4 trains candidate artifacts but does not bypass Phase 5 evaluation or Phase 6 service integration.
-- Imported Phase 2 rows cannot influence predictions until an admin approves them and publishes the batch.
-- Phase 3 reports data coverage/provenance; Phase 4 registers candidate models; Phase 5 owns measured performance/calibration/uncertainty.
-- Env overrides: `MONGODB_URI`, `MONGODB_DB`, `PORT`, `INGESTION_MAX_BYTES`.
+- **Only `db.js` talks to MongoDB.** Prediction/model logic remains outside data-access code.
+- Imported Phase 2 rows cannot influence predictions until they are approved/published; live Phase 6 nearby evidence is further restricted to verified, unflagged records.
+- Phase 6 software can be deployed with production ML still disabled. Python stays not-ready until the reviewed artifacts and `BORESAKSHI_PHASE6_APPROVED=YES` gate are present.
+- Env overrides include `MONGODB_URI`, `MONGODB_DB`, `PORT`, `INGESTION_MAX_BYTES`, and the `ML_*` variables above.
