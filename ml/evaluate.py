@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from boresakshi_ml.data import load_feature_dataset
-from boresakshi_ml.evaluation import EvaluationConfig, evaluate_phase4_run
+from boresakshi_ml.scientific import ScientificEvaluationConfig, evaluate_scientifically
 
 
 def parse_args() -> argparse.Namespace:
@@ -20,6 +20,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-rows", type=int, default=30)
     parser.add_argument("--min-spatial-blocks", type=int, default=5)
     parser.add_argument("--calibration-bins", type=int, default=10)
+    parser.add_argument("--bootstrap-iterations", type=int, default=500)
+    parser.add_argument("--confidence-level", type=float, default=0.95)
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
@@ -29,10 +31,10 @@ def main() -> int:
     dataset = load_feature_dataset(args.dataset)
     phase4_run = Path(args.phase4_run)
     evaluation_id = args.evaluation_id.strip() or f"phase5-{phase4_run.name}-{dataset['datasetHash'][:10]}"
-    report = evaluate_phase4_run(
+    report = evaluate_scientifically(
         dataset,
         phase4_run,
-        EvaluationConfig(
+        ScientificEvaluationConfig(
             output_dir=Path(args.out),
             evaluation_id=evaluation_id,
             folds=args.folds,
@@ -41,6 +43,8 @@ def main() -> int:
             min_rows=args.min_rows,
             min_spatial_blocks=args.min_spatial_blocks,
             calibration_bins=args.calibration_bins,
+            bootstrap_iterations=args.bootstrap_iterations,
+            confidence_level=args.confidence_level,
             seed=args.seed,
         ),
     )
