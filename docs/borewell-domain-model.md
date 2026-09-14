@@ -60,3 +60,18 @@ Before moving data, create a separate migration plan covering field mapping,
 coordinate validation, spatial indexes, backfill batches, rollback, dual-read
 validation, and a cutover decision. Do not migrate production records directly
 from this document.
+
+
+## Observation API
+
+These routes require an authenticated cookie session. Write requests also require the
+per-session `X-CSRF-Token` header.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/borewells/:id/observations` | Read observations for an owned borewell; admins may read any borewell |
+| `POST /api/borewells/:id/observations` | Append a `WATER_LEVEL`, `YIELD`, or `MAINTENANCE` observation |
+
+Operators may only access borewells they created. The API never updates or deletes
+the initial drilling observation; corrections must be represented by a later
+observation and a reviewed audit process.
