@@ -155,6 +155,9 @@ async function main() {
     });
     assert(res.status === 201, `Expected 201, got ${res.status}`);
     assert(res.data.id !== undefined, "Missing borewell ID in response");
+    assert(/^BW-[A-Z0-9_-]+$/.test(res.data.publicId), "Missing public borewell ID");
+    assert(res.data.status === "ACTIVE", "Expected ACTIVE borewell status");
+    assert(res.data.verificationStatus === "SUBMITTED", "Expected submitted verification status");
     assert(res.data.scoredPredictions === 1, "Explicitly linked prediction was not scored");
   });
 
