@@ -66,6 +66,19 @@ app.post("/api/auth/signout", asyncHandler(signout));
 // ----------------------------------------------------------------------------
 app.post("/api/borewells", requireAuth, validate(borewellSchema), asyncHandler(async (req, res) => {
   const { lat, lng, placeName, depthFt, strata, waterStrikeFt, yieldLpm, success, language, predictionId } = req.body;
+
+  // Validate a requested accountability link before storing the field record so
+  // a bad link cannot leave a partially accepted borewell submission behind.
+  let linkedPrediction = null;
+  if (predictionId) {
+    linkedPrediction = await db.getPredictionById(predictionId);
+    if (!linkedPrediction) return res.status(404).json({ error: "Prediction not found" });
+    if (linkedPrediction.actual != null) return res.status(409).json({ error: "Prediction already has an outcome" });
+    if (distanceKm({ lat, lng }, { lat: linkedPrediction.lat, lng: linkedPrediction.lng }) > NEAR_KM) {
+      return res.status(400).json({ error: `Outcome must be within ${NEAR_KM} km of the linked prediction` });
+    }
+  }
+
   const record = {
     id: nanoid(10),
     lat, lng,
@@ -96,16 +109,9 @@ app.post("/api/borewells", requireAuth, validate(borewellSchema), asyncHandler(a
   // ACCOUNTABILITY LOOP: location proximity is not enough to link an outcome to
   // a request. Score at most the explicit prediction selected by the operator.
   let scoredPredictions = 0;
-  if (predictionId) {
-    const prediction = await db.getPredictionById(predictionId);
-    if (!prediction) return res.status(404).json({ error: "Prediction not found" });
-    if (prediction.actual != null) return res.status(409).json({ error: "Prediction already has an outcome" });
-    if (distanceKm({ lat, lng }, { lat: prediction.lat, lng: prediction.lng }) > NEAR_KM) {
-      return res.status(400).json({ error: `Outcome must be within ${NEAR_KM} km of the linked prediction` });
-    }
-
-    const predictedSuccess = prediction.successProbability >= 50;
-    await db.updatePrediction(prediction.id, {
+  if (linkedPrediction) {
+    const predictedSuccess = linkedPrediction.successProbability >= 50;
+    await db.updatePrediction(linkedPrediction.id, {
       actual: { success: record.success, depthFt: record.depthFt, borewellId: record.id, closedAt: record.createdAt },
       correct: predictedSuccess === record.success,
     });
