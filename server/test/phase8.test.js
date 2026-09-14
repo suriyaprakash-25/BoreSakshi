@@ -23,7 +23,7 @@ function validPayload() {
     lat: 11.36,
     lng: 77.8,
     gpsAccuracyM: 7.5,
-    gpsCapturedAt: "2026-09-15T00:00:00.000Z",
+    gpsCapturedAt: "2026-09-14T20:00:00.000Z",
     drillingDate: "2026-09-14",
     placeName: "Test village",
     depthFt: 420,
