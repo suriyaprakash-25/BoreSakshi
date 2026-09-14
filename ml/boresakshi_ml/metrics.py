@@ -120,6 +120,63 @@ def regression_metrics(y_true: np.ndarray, predictions: np.ndarray) -> dict[str,
     }
 
 
+def spatial_block_bootstrap_intervals(
+    y_true: np.ndarray,
+    predictions: np.ndarray,
+    groups: np.ndarray,
+    task: str,
+    iterations: int = 500,
+    confidence_level: float = 0.95,
+    seed: int = 42,
+) -> dict[str, Any]:
+    if iterations < 20:
+        raise ValueError("bootstrap iterations must be at least 20")
+    if not 0.5 < confidence_level < 1.0:
+        raise ValueError("confidence_level must be between 0.5 and 1")
+    y = np.asarray(y_true)
+    p = np.asarray(predictions, dtype=float)
+    g = np.asarray(groups, dtype=object)
+    unique_groups = np.unique(g)
+    if len(unique_groups) < 2:
+        raise ValueError("at least two spatial groups are required for block bootstrap")
+
+    metric_names = ["accuracy", "precision", "recall", "f1", "rocAuc", "brier"] if task == "success" else ["mae", "rmse", "r2"]
+    samples: dict[str, list[float]] = {name: [] for name in metric_names}
+    rng = np.random.default_rng(seed)
+    group_indices = {group: np.flatnonzero(g == group) for group in unique_groups}
+
+    for _ in range(iterations):
+        chosen = rng.choice(unique_groups, size=len(unique_groups), replace=True)
+        indices = np.concatenate([group_indices[group] for group in chosen])
+        if task == "success":
+            metrics = classification_metrics(y[indices].astype(int), p[indices])
+        else:
+            metrics = regression_metrics(y[indices].astype(float), p[indices])
+        for name in metric_names:
+            value = metrics.get(name)
+            if value is not None and math.isfinite(float(value)):
+                samples[name].append(float(value))
+
+    alpha = (1.0 - confidence_level) / 2.0
+    intervals: dict[str, Any] = {}
+    for name, values in samples.items():
+        if not values:
+            intervals[name] = {"lower": None, "upper": None, "bootstrapSamples": 0}
+            continue
+        intervals[name] = {
+            "lower": float(np.quantile(values, alpha)),
+            "upper": float(np.quantile(values, 1.0 - alpha)),
+            "bootstrapSamples": len(values),
+        }
+    return {
+        "method": "spatial_block_bootstrap",
+        "confidenceLevel": confidence_level,
+        "requestedIterations": iterations,
+        "spatialBlockCount": len(unique_groups),
+        "metrics": intervals,
+    }
+
+
 def conformal_quantile(residuals: np.ndarray, coverage: float = 0.90) -> float:
     if not 0.5 < coverage < 1.0:
         raise ValueError("coverage must be between 0.5 and 1")
