@@ -1,6 +1,4 @@
-// History.jsx — the operator's full log history: search, outcome filter, and a
-// detail card per logged outcome. Reads the shared OperatorDataProvider, so a log
-// submitted on the Log screen appears here without a refresh.
+// History.jsx — the operator's full submission history.
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, Inbox, Loader2 } from "lucide-react";
@@ -8,41 +6,42 @@ import AppHeader from "../components/AppHeader.jsx";
 import LogFilters from "../components/LogFilters.jsx";
 import LogItem from "../components/LogItem.jsx";
 import { useOperatorData } from "../operatorData.jsx";
-import { successRate, filterLogs } from "../metrics.js";
+import { successRate, filterLogs, trustedOutcomeLogs } from "../metrics.js";
 
 export default function History() {
   const { logs, loading } = useOperatorData();
   const [query, setQuery] = useState("");
   const [outcome, setOutcome] = useState("all");
 
+  const verified = trustedOutcomeLogs(logs);
   const rate = successRate(logs);
   const shown = useMemo(() => filterLogs(logs, { query, outcome }), [logs, query, outcome]);
 
   return (
     <div className="op">
-      <AppHeader subtitle="Log history" />
+      <AppHeader subtitle="Submission history" />
       <div className="hist-body op-anim">
         <header className="hist-head">
-          <h1>Log history</h1>
+          <h1>Submission history</h1>
           <p className="hist-summary">
-            <strong>{logs.length}</strong> log{logs.length === 1 ? "" : "s"}
-            {rate != null && <> · <strong>{rate}%</strong> water-strike success rate</>}
+            <strong>{logs.length}</strong> submission{logs.length === 1 ? "" : "s"} · <strong>{verified.length}</strong> verified
+            {rate != null && <> · <strong>{rate}%</strong> verified water-strike rate</>}
           </p>
         </header>
 
         <LogFilters query={query} setQuery={setQuery} outcome={outcome} setOutcome={setOutcome} />
 
         {loading && logs.length === 0 ? (
-          <div className="dash-loading"><Loader2 className="spin" size={30} /> Loading your logs…</div>
+          <div className="dash-loading"><Loader2 className="spin" size={30} /> Loading your submissions…</div>
         ) : logs.length === 0 ? (
           <div className="card hist-empty">
             <div className="hist-empty-badge"><Inbox size={26} strokeWidth={2} /></div>
-            <p>No logs yet. <Link to="/log" className="dash-link-inline">Log your first drill</Link> and it will appear here.</p>
+            <p>No submissions yet. <Link to="/log" className="dash-link-inline">Log your first drill</Link> and it will appear here.</p>
           </div>
         ) : shown.length === 0 ? (
           <div className="card hist-empty">
             <div className="hist-empty-badge"><Search size={24} strokeWidth={2} /></div>
-            <p>No logs match your search or filter.</p>
+            <p>No submissions match your search or filter.</p>
             <button className="btn btn-ghost btn-sm" onClick={() => { setQuery(""); setOutcome("all"); }}>Clear filters</button>
           </div>
         ) : (
