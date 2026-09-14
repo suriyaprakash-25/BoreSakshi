@@ -57,6 +57,11 @@ export const borewellSchema = z.object({
   predictionId: z.string().min(1).max(40).optional(),
 });
 
+export const importBorewellCsvSchema = z.object({
+  csvText: z.string().min(1, "CSV data is required").max(1_000_000, "CSV is too large (maximum 1 MB)"),
+  dryRun: z.boolean().optional().default(true),
+});
+
 export const observationSchema = z.object({
   type: z.enum(["WATER_LEVEL", "YIELD", "MAINTENANCE"]),
   observedAt: z.string().datetime().optional(),
