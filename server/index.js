@@ -9,7 +9,7 @@ import { db, connectDB, pingDB } from "./db.js";
 import { predictBorewell, distanceKm, NEAR_KM } from "./predict.js";
 import { signup, signin, signout, requireAuth, requireAdmin, requireCsrf } from "./auth.js";
 import {
-  validate, signupSchema, signinSchema, predictSchema, borewellSchema,
+  validate, signupSchema, signinSchema, predictSchema, borewellSchema, observationSchema,
   adminOperatorPatchSchema, adminLogPatchSchema,
 } from "./validation.js";
 import {
@@ -165,6 +165,51 @@ app.get("/api/borewells", asyncHandler(async (_req, res) => {
 app.get("/api/borewells/mine", requireAuth, asyncHandler(async (req, res) =>
   res.json(await db.getBorewellsByOperator(req.operator.id))
 ));
+
+// Observations are private operational data. An operator may access only their
+// own borewells; admins may access any record for verification and oversight.
+async function getAccessibleBorewell(req, res) {
+  const borewell = await db.getBorewellById(req.params.id);
+  if (!borewell) {
+    res.status(404).json({ error: "Borewell not found" });
+    return null;
+  }
+  if (req.operator.role !== "admin" && borewell.operatorId !== req.operator.id) {
+    res.status(403).json({ error: "You do not have access to this borewell" });
+    return null;
+  }
+  return borewell;
+}
+
+app.get("/api/borewells/:id/observations", requireAuth, asyncHandler(async (req, res) => {
+  const borewell = await getAccessibleBorewell(req, res);
+  if (!borewell) return;
+  res.json(await db.getObservationsByBorewellId(borewell.id));
+}));
+
+app.post(
+  "/api/borewells/:id/observations",
+  requireAuth,
+  requireCsrf,
+  validate(observationSchema),
+  asyncHandler(async (req, res) => {
+    const borewell = await getAccessibleBorewell(req, res);
+    if (!borewell) return;
+    const observation = {
+      id: nanoid(10),
+      borewellId: borewell.id,
+      type: req.body.type,
+      observedAt: req.body.observedAt || new Date().toISOString(),
+      waterLevelFt: req.body.waterLevelFt ?? null,
+      yieldLpm: req.body.yieldLpm ?? null,
+      note: req.body.note?.trim() || "",
+      createdBy: req.operator.id,
+      createdAt: new Date().toISOString(),
+    };
+    await db.addObservation(observation);
+    res.status(201).json(observation);
+  })
+);
 
 // this operator's assigned sites still awaiting a log
 app.get("/api/assignments", requireAuth, asyncHandler(async (req, res) =>
