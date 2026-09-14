@@ -12,6 +12,7 @@
     "test:phase2:contract": "node --test test/phase2-contract.test.js",
     "test:phase3": "node --test test/geospatial.test.js test/featurePipeline.test.js",
     "test:phase6": "node --test test/mlClient.test.js test/predictPhase6.test.js",
+    "test:phase7": "node --test test/mlClient.test.js test/predictPhase6.test.js test/predictionContract.test.js",
     "dataset:validate": "node scripts/validate-dataset.js",
     "features:build": "node scripts/build-feature-dataset.js",
     "migrate:phase2": "node migrations/phase2-v1.js",
