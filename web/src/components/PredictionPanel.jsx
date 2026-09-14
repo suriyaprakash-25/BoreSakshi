@@ -177,6 +177,35 @@ function Disclosure({ icon, title, defaultOpen = false, children }) {
   );
 }
 
+function PredictionReference({ predictionId }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyPredictionReference() {
+    if (!navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(predictionId);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access may be blocked in non-secure browser contexts.
+    }
+  }
+
+  return (
+    <div className="prediction-reference">
+      <div>
+        <strong>Drilling reference</strong>
+        <p>Give this to the rig operator after drilling so the verified result can be linked to this estimate.</p>
+        <code>{predictionId}</code>
+      </div>
+      <button type="button" className="btn btn-ghost prediction-copy" onClick={copyPredictionReference}>
+        {copied ? <Check size={15} strokeWidth={2.3} /> : <Copy size={15} strokeWidth={2.3} />}
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
 export default function PredictionPanel({ status, data, coords, onPinCurrentLocation }) {
   if (status === "idle") {
     return (
@@ -211,18 +240,6 @@ export default function PredictionPanel({ status, data, coords, onPinCurrentLoca
   }
 
   const conf = confidenceStyle[data.confidence] || confidenceStyle.Low;
-  const [copied, setCopied] = useState(false);
-
-  async function copyPredictionReference() {
-    if (!data.predictionId || !navigator.clipboard) return;
-    try {
-      await navigator.clipboard.writeText(data.predictionId);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard access may be blocked in non-secure browser contexts.
-    }
-  }
 
   return (
     <div className="panel panel-result">
@@ -265,19 +282,7 @@ export default function PredictionPanel({ status, data, coords, onPinCurrentLoca
 
       <div className="basis">{data.basis}</div>
 
-      {data.predictionId && (
-        <div className="prediction-reference">
-          <div>
-            <strong>Drilling reference</strong>
-            <p>Give this to the rig operator after drilling so the verified result can be linked to this estimate.</p>
-            <code>{data.predictionId}</code>
-          </div>
-          <button type="button" className="btn btn-ghost prediction-copy" onClick={copyPredictionReference}>
-            {copied ? <Check size={15} strokeWidth={2.3} /> : <Copy size={15} strokeWidth={2.3} />}
-            {copied ? "Copied" : "Copy"}
-          </button>
-        </div>
-      )}
+      {data.predictionId && <PredictionReference predictionId={data.predictionId} />}
 
       {/* item 4 — plain-language wrapper over the same numbers (no AI call) */}
       <AskBoreSakshi data={data} />
