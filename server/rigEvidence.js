@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import path from "path";
-import { mkdir, readFile, unlink, writeFile } from "fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "fs/promises";
 import { nanoid } from "nanoid";
 
 const MIME = {
@@ -62,7 +62,7 @@ export async function storeEvidenceUpload({ buffer, mediaType, originalName, ope
   if (buffer.length > cfg.maxBytes) throw new Error(`${cfg.kind === "photo" ? "Photo" : "Video"} is too large`);
 
   const id = nanoid(14);
-  const objectKey = path.posix.join(operatorId, `${id}${cfg.ext}`);
+  const objectKey = path.posix.join("unbound", operatorId, `${id}${cfg.ext}`);
   const target = fullPath(objectKey);
   await mkdir(path.dirname(target), { recursive: true });
   await writeFile(target, buffer, { flag: "wx" });
@@ -112,8 +112,23 @@ export async function resolveEvidenceTokens(tokens, operatorId) {
   return evidence;
 }
 
+export async function bindEvidenceToBorewell(evidence, borewellId) {
+  const bound = [];
+  for (const item of evidence) {
+    const ext = path.extname(item.objectKey);
+    const objectKey = path.posix.join("borewells", borewellId, `${item.id}${ext}`);
+    const source = fullPath(item.objectKey);
+    const target = fullPath(objectKey);
+    await mkdir(path.dirname(target), { recursive: true });
+    await rename(source, target);
+    bound.push({ ...item, objectKey, boundBorewellId: borewellId });
+  }
+  return bound;
+}
+
 export async function deleteUnboundEvidence(token, operatorId) {
   const meta = verifyEvidenceToken(token, { operatorId });
+  if (!String(meta.objectKey || "").startsWith("unbound/")) throw new Error("Bound evidence cannot be deleted through the upload endpoint");
   await unlink(fullPath(meta.objectKey)).catch((err) => {
     if (err.code !== "ENOENT") throw err;
   });
