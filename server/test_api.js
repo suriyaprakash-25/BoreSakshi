@@ -4,11 +4,13 @@ const API_BASE = "http://localhost:4000/api";
 const report = [];
 let authCookie = "";
 let predictionId = "";
+let csrfToken = "";
 
 async function fetchAPI(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
   const headers = { ...options.headers };
   if (authCookie) headers.Cookie = authCookie;
+  if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
 
   try {
     const res = await fetch(url, { ...options, headers });
@@ -21,6 +23,7 @@ async function fetchAPI(endpoint, options = {}) {
 
     const isJson = res.headers.get("content-type")?.includes("application/json");
     const data = isJson ? await res.json() : await res.text();
+    if (data?.csrfToken) csrfToken = data.csrfToken;
     return { status: res.status, ok: res.ok, data };
   } catch (err) {
     console.error(`Fetch error for ${url}:`, err);
@@ -113,6 +116,19 @@ async function main() {
     const res = await fetchAPI("/auth/session");
     assert(res.status === 200, `Expected 200, got ${res.status}`);
     assert(res.data.operator?.id, "Missing session operator");
+    assert(typeof res.data.csrfToken === "string", "Missing CSRF token");
+  });
+
+  await runTest("CSRF rejects protected writes without a token", async () => {
+    const savedToken = csrfToken;
+    csrfToken = "";
+    const res = await fetchAPI("/borewells", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 11.38, lng: 77.89, success: true, depthFt: 300 }),
+    });
+    csrfToken = savedToken;
+    assert(res.status === 403, `Expected 403, got ${res.status}`);
   });
 
   // 7. Operator Protected Routes
