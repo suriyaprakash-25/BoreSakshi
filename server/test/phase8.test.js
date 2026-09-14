@@ -148,10 +148,14 @@ test("public Phase 8 borewell endpoint exposes trusted outcomes only", async () 
 test("ledger closes only after verification and reopens when trust is removed", async () => {
   let record = {
     id: "well-1", lat: 11, lng: 77, success: true, depthFt: 300, waterStrikeFt: 220, yieldLpm: 40,
+    drilledAt: "2026-09-14T00:00:00.000Z",
     verified: false, flagged: false, ledgerScoredAt: null,
     datasetEligibility: { eligible: false, status: "awaiting_operator_submission_verification" },
   };
-  let prediction = { id: "pred-1", lat: 11, lng: 77, successProbability: 70, actual: null, correct: null };
+  let prediction = {
+    id: "pred-1", lat: 11, lng: 77, successProbability: 70, actual: null, correct: null,
+    createdAt: "2026-09-13T12:00:00.000Z",
+  };
   const db = {
     getAllBorewells: async () => [record],
     updateBorewell: async (_id, patch) => { record = { ...record, ...patch }; return record; },
@@ -194,6 +198,49 @@ test("ledger closes only after verification and reopens when trust is removed", 
     assert.equal(record.datasetEligibility.eligible, false);
     assert.equal(prediction.actual, null);
     assert.equal(prediction.correct, null);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("a prediction created after the drilling outcome is never scored", async () => {
+  let record = {
+    id: "well-late", lat: 11, lng: 77, success: false, depthFt: 450, waterStrikeFt: 0, yieldLpm: 0,
+    drilledAt: "2026-09-14T00:00:00.000Z", verified: false, flagged: false, ledgerScoredAt: null,
+    datasetEligibility: { eligible: false },
+  };
+  let prediction = {
+    id: "pred-late", lat: 11, lng: 77, successProbability: 20, actual: null, correct: null,
+    createdAt: "2026-09-14T10:00:00.000Z",
+  };
+  const db = {
+    getAllBorewells: async () => [record],
+    updateBorewell: async (_id, patch) => { record = { ...record, ...patch }; return record; },
+    getPredictions: async () => [prediction],
+    updatePrediction: async (_id, patch) => { prediction = { ...prediction, ...patch }; return prediction; },
+  };
+  const app = express();
+  app.use(express.json());
+  app.use(createPhase8Router({
+    db,
+    requireAuth: (req, _res, next) => { req.operator = { id: "admin", name: "Admin", role: "admin" }; next(); },
+    requireAdmin: (_req, _res, next) => next(),
+    validate,
+    borewellSchema,
+    adminLogPatchSchema,
+    distanceKm: () => 0,
+    NEAR_KM: 5,
+  }));
+  const server = await new Promise((resolve) => {
+    const s = app.listen(0, () => resolve(s));
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/logs/well-late`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ verified: true }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(prediction.actual, null);
+    assert.equal(record.ledgerScoredPredictions, 0);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
