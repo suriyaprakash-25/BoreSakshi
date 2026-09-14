@@ -143,6 +143,8 @@ GitHub Actions runs:
 - `.github/workflows/phase4-ml.yml`
 - `.github/workflows/phase5-evaluation.yml`
 
+Full implementation details and the completed review gate are documented in `../docs/phase-5-scientific-evaluation.md` and `../docs/phase-5-completion-report.md`.
+
 ## Phase boundary
 
 Phase 5 selects the best candidate per target using measured spatial held-out evidence, but it does **not** authorize serving. Phase 6 must load the selected Phase 4 base model plus Phase 5 calibration/interval artifacts into the Python ML service and integrate Node → Python inference only after review approval.
