@@ -3,6 +3,7 @@ import http from "http";
 const API_BASE = "http://localhost:4000/api";
 const report = [];
 let authCookie = "";
+let predictionId = "";
 
 async function fetchAPI(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
@@ -62,6 +63,8 @@ async function main() {
     });
     assert(res.status === 200, `Expected 200, got ${res.status}`);
     assert(res.data.successProbability !== undefined, "Missing successProbability");
+    assert(typeof res.data.predictionId === "string", "Missing saved prediction ID");
+    predictionId = res.data.predictionId;
   });
 
   // 3. Borewells (Public)
@@ -123,11 +126,13 @@ async function main() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        lat: 11.3, lng: 77.8, success: true, depthFt: 300, strata: "Hard", waterStrikeFt: 250, yieldLpm: 100
+        lat: 11.38, lng: 77.89, success: true, depthFt: 300, strata: "Hard", waterStrikeFt: 250, yieldLpm: 100,
+        predictionId
       })
     });
     assert(res.status === 201, `Expected 201, got ${res.status}`);
     assert(res.data.id !== undefined, "Missing borewell ID in response");
+    assert(res.data.scoredPredictions === 1, "Explicitly linked prediction was not scored");
   });
 
   // 7. Admin Protected Routes (Should fail with 403 since we are a normal operator)
