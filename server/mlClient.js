@@ -92,8 +92,9 @@ export class MlServiceClient {
               retryable: true,
               details: { cause: error?.message || String(error) },
             });
+        if (!normalized.retryable) throw normalized;
         lastError = normalized;
-        if (!normalized.retryable || attempt >= attempts) break;
+        if (attempt >= attempts) break;
         await sleep(Math.min(100 * attempt, 300));
       } finally {
         clearTimeout(timer);
