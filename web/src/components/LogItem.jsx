@@ -2,10 +2,11 @@
 import { useState } from "react";
 import {
   MapPin, Droplets, DropletOff, Ruler, Waves, Layers, BadgeCheck, Flag, FlagOff,
-  Clock3, Camera, Video, LocateFixed,
+  Clock3, Camera, Video, LocateFixed, ExternalLink,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { placeLabel, fmtDate } from "../metrics.js";
+import { rigEvidenceUrl } from "../api.js";
 
 export default function LogItem({ log, showOperator = false, adminActions = null }) {
   const [flagging, setFlagging] = useState(false);
@@ -72,6 +73,30 @@ export default function LogItem({ log, showOperator = false, adminActions = null
         {photoCount > 0 && <span><Camera size={13} strokeWidth={2.2} /> {photoCount} photo{photoCount === 1 ? "" : "s"}</span>}
         {videoCount > 0 && <span><Video size={13} strokeWidth={2.2} /> {videoCount} video{videoCount === 1 ? "" : "s"}</span>}
       </div>
+
+      {log.geologicalLayers?.length > 0 && (
+        <div className="log-flag-note">
+          <Layers size={13} strokeWidth={2.2} />
+          {log.geologicalLayers.map((layer, index) => (
+            <span key={`${layer.fromFt}-${layer.toFt}-${index}`}>
+              {index ? " · " : " "}{layer.fromFt}–{layer.toFt} ft {layer.material}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {(log.evidence || []).length > 0 && (
+        <div className="log-actions">
+          {(log.evidence || []).map((item, index) => (
+            <a key={item.id} className="btn btn-ghost btn-sm"
+              href={rigEvidenceUrl(log.id, item.id)} target="_blank" rel="noreferrer">
+              {item.kind === "photo" ? <Camera size={14} /> : <Video size={14} />}
+              {item.kind === "photo" ? `Photo ${index + 1}` : `Video ${index + 1}`}
+              <ExternalLink size={12} />
+            </a>
+          ))}
+        </div>
+      )}
 
       {log.flagged && log.flagReason && (
         <div className="log-flag-note">
