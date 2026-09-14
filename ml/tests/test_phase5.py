@@ -6,9 +6,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from boresakshi_ml.evaluation import EvaluationConfig, EvaluationContractError, evaluate_phase4_run, load_phase4_manifest
+from boresakshi_ml.evaluation import EvaluationContractError, load_phase4_manifest
 from boresakshi_ml.metrics import calibration_report, classification_metrics, conformal_quantile, interval_report, regression_metrics
-from boresakshi_ml.schema import CATEGORICAL_FEATURES, NUMERIC_FEATURES
+from boresakshi_ml.scientific import ScientificEvaluationConfig, evaluate_scientifically
+from boresakshi_ml.schema import NUMERIC_FEATURES
 from boresakshi_ml.training import TrainingConfig, train_model_candidates
 
 
@@ -68,6 +69,22 @@ def phase4_run(tmp_path: Path, dataset: dict):
     return out / "phase4-test"
 
 
+def scientific_config(tmp_path: Path, evaluation_id: str, **overrides):
+    values = {
+        "output_dir": tmp_path / "phase5-evaluations",
+        "evaluation_id": evaluation_id,
+        "folds": 5,
+        "inner_folds": 3,
+        "min_rows": 30,
+        "min_spatial_blocks": 5,
+        "bootstrap_iterations": 80,
+        "confidence_level": 0.95,
+        "seed": 17,
+    }
+    values.update(overrides)
+    return ScientificEvaluationConfig(**values)
+
+
 def test_metric_primitives_publish_requested_scientific_metrics():
     y = np.asarray([0, 0, 1, 1])
     p = np.asarray([0.1, 0.4, 0.7, 0.9])
@@ -98,15 +115,7 @@ def test_phase4_manifest_checksum_is_enforced(tmp_path: Path):
 def test_spatial_evaluation_selects_candidates_without_serving_approval(tmp_path: Path):
     dataset = synthetic_dataset()
     run_dir = phase4_run(tmp_path, dataset)
-    report = evaluate_phase4_run(dataset, run_dir, EvaluationConfig(
-        output_dir=tmp_path / "phase5-evaluations",
-        evaluation_id="eval-1",
-        folds=5,
-        inner_folds=3,
-        min_rows=30,
-        min_spatial_blocks=5,
-        seed=17,
-    ))
+    report = evaluate_scientifically(dataset, run_dir, scientific_config(tmp_path, "eval-1"))
     assert report["blockedTasks"] == []
     assert report["servingApproved"] is False
     assert report["phaseBoundary"]["scientificEvaluationComplete"] is True
@@ -115,10 +124,12 @@ def test_spatial_evaluation_selects_candidates_without_serving_approval(tmp_path
     success = report["tasks"]["success"]
     assert success["selection"]["selectedCandidate"] in {"logistic_regression", "random_forest"}
     assert success["selection"]["servingApproved"] is False
+    assert success["selection"]["metricConfidenceIntervals"]["method"] == "spatial_block_bootstrap"
     for candidate in success["candidates"]:
         assert "brier" in candidate["calibratedMetrics"]
         assert "rocAuc" in candidate["calibratedMetrics"]
         assert "expectedCalibrationError" in candidate["calibratedCalibration"]
+        assert candidate["metricConfidenceIntervals"]["confidenceLevel"] == 0.95
         assert len(candidate["oofPredictions"]) == len(dataset["rows"])
         assert {row["fold"] for row in candidate["oofPredictions"]} == {1, 2, 3, 4, 5}
 
@@ -129,20 +140,14 @@ def test_spatial_evaluation_selects_candidates_without_serving_approval(tmp_path
             assert {"mae", "rmse", "r2"}.issubset(candidate["metrics"])
             assert candidate["intervals"]["targetCoverage"] == 0.9
             assert candidate["intervals"]["evaluatedRows"] > 0
+            assert candidate["metricConfidenceIntervals"]["metrics"]["mae"]["lower"] is not None
 
 
 def test_evaluation_writes_calibration_interval_and_audit_artifacts(tmp_path: Path):
     dataset = synthetic_dataset()
     run_dir = phase4_run(tmp_path, dataset)
     out = tmp_path / "phase5-evaluations"
-    report = evaluate_phase4_run(dataset, run_dir, EvaluationConfig(
-        output_dir=out,
-        evaluation_id="eval-artifacts",
-        folds=5,
-        inner_folds=3,
-        min_rows=30,
-        min_spatial_blocks=5,
-    ))
+    report = evaluate_scientifically(dataset, run_dir, scientific_config(tmp_path, "eval-artifacts", output_dir=out))
     root = out / "eval-artifacts"
     assert (root / "evaluation-manifest.json").exists()
     assert (root / "evaluation-manifest.sha256").exists()
@@ -155,14 +160,16 @@ def test_evaluation_writes_calibration_interval_and_audit_artifacts(tmp_path: Pa
     assert depth_interval["nonNegativeLowerBound"] is True
     assert report["tasks"]["success"]["coverage"]["spatialBlockCount"] == 10
     assert report["tasks"]["success"]["coverage"]["geographicBounds"]["minLat"] is not None
+    markdown = (root / "evaluation-report.md").read_text(encoding="utf-8")
+    assert "spatial-block bootstrap confidence intervals" in markdown.lower()
 
 
 def test_insufficient_spatial_coverage_blocks_selection(tmp_path: Path):
     dataset = synthetic_dataset(rows=36, blocks=3)
     run_dir = phase4_run(tmp_path, dataset)
-    report = evaluate_phase4_run(dataset, run_dir, EvaluationConfig(
-        output_dir=tmp_path / "phase5-evaluations",
-        evaluation_id="blocked",
+    report = evaluate_scientifically(dataset, run_dir, scientific_config(
+        tmp_path,
+        "blocked",
         folds=3,
         inner_folds=2,
         min_rows=20,
