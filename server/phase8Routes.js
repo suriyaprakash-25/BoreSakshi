@@ -1,6 +1,6 @@
 import express from "express";
 import { nanoid } from "nanoid";
-import { buildOperatorBorewellRecord, buildVerificationPatch, isTrustedOutcome } from "./rigData.js";
+import { buildOperatorBorewellRecord, buildVerificationPatch, isOperatorSubmission, isTrustedOutcome } from "./rigData.js";
 import {
   bindEvidenceToBorewell,
   deleteUnboundEvidence,
@@ -196,20 +196,21 @@ export function createPhase8Router({
     } catch (error) { next(error); }
   });
 
-  // Phase 8 keeps the current admin Verify button but makes the trust boundary real:
-  // only a verified, unflagged, dataset-eligible log can close predictions/ledger.
+  // Phase 8 keeps the current admin Verify button but makes the operator trust
+  // boundary real without mutating Phase 2 imported-data review semantics.
   router.patch("/api/admin/logs/:id", requireAuth, requireAdmin, validate(adminLogPatchSchema), async (req, res, next) => {
     try {
       const existing = await findBorewell(db, req.params.id);
       if (!existing) return res.status(404).json({ error: "Log not found" });
       const now = new Date().toISOString();
       const patch = { ...req.body };
+      const operatorSubmission = isOperatorSubmission(existing);
 
       if (patch.flagged === true) {
         patch.flagReason = (req.body.flagReason || "").trim();
         patch.flaggedAt = now;
         patch.flaggedBy = req.operator.name;
-        patch.datasetEligibility = { eligible: false, status: "flagged_for_review" };
+        if (operatorSubmission) patch.datasetEligibility = { eligible: false, status: "flagged_for_review" };
       } else if (patch.flagged === false) {
         patch.flagReason = "";
         patch.flaggedAt = null;
@@ -218,11 +219,12 @@ export function createPhase8Router({
 
       if (typeof patch.verified === "boolean") {
         Object.assign(patch, buildVerificationPatch({
+          record: existing,
           verified: patch.verified,
           adminName: req.operator.name,
           now,
         }));
-      } else if (patch.flagged === false && existing.verified === true) {
+      } else if (operatorSubmission && patch.flagged === false && existing.verified === true) {
         patch.datasetEligibility = { eligible: true, status: "verified_operator_outcome" };
       }
 
