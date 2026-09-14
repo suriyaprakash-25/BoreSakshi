@@ -151,6 +151,8 @@ test("ledger closes only after verification and reopens when trust is removed", 
   let record = {
     id: "well-1", lat: 11, lng: 77, success: true, depthFt: 300, waterStrikeFt: 220, yieldLpm: 40,
     drilledAt: "2026-09-14T00:00:00.000Z",
+    rigSubmissionSchemaVersion: "8.0.0",
+    provenance: { sourceType: "operator" },
     verified: false, flagged: false, ledgerScoredAt: null,
     datasetEligibility: { eligible: false, status: "awaiting_operator_submission_verification" },
   };
@@ -208,8 +210,11 @@ test("ledger closes only after verification and reopens when trust is removed", 
 test("a prediction created after the drilling outcome is never scored", async () => {
   let record = {
     id: "well-late", lat: 11, lng: 77, success: false, depthFt: 450, waterStrikeFt: 0, yieldLpm: 0,
-    drilledAt: "2026-09-14T00:00:00.000Z", verified: false, flagged: false, ledgerScoredAt: null,
-    datasetEligibility: { eligible: false },
+    drilledAt: "2026-09-14T00:00:00.000Z",
+    rigSubmissionSchemaVersion: "8.0.0",
+    provenance: { sourceType: "operator" },
+    verified: false, flagged: false, ledgerScoredAt: null,
+    datasetEligibility: { eligible: false, status: "awaiting_operator_submission_verification" },
   };
   let prediction = {
     id: "pred-late", lat: 11, lng: 77, successProbability: 20, actual: null, correct: null,
