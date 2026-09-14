@@ -64,6 +64,19 @@ export const borewellSchema = z.object({
   evidenceTokens: z.array(z.string().min(20).max(4096)).min(1, "At least one evidence photo is required").max(10),
   language: z.string().max(10).optional(),
 }).superRefine((data, ctx) => {
+  const drillingMs = Date.parse(`${data.drillingDate}T00:00:00.000Z`);
+  const normalizedDate = Number.isFinite(drillingMs) ? new Date(drillingMs).toISOString().slice(0, 10) : null;
+  if (!Number.isFinite(drillingMs) || normalizedDate !== data.drillingDate) {
+    ctx.addIssue({ code: "custom", path: ["drillingDate"], message: "drillingDate must be a valid calendar date" });
+  } else if (data.drillingDate > new Date().toISOString().slice(0, 10)) {
+    ctx.addIssue({ code: "custom", path: ["drillingDate"], message: "drillingDate cannot be in the future" });
+  }
+
+  const gpsMs = Date.parse(data.gpsCapturedAt);
+  if (Number.isFinite(gpsMs) && gpsMs > Date.now() + 5 * 60 * 1000) {
+    ctx.addIssue({ code: "custom", path: ["gpsCapturedAt"], message: "GPS capture timestamp cannot be in the future" });
+  }
+
   if (data.success) {
     if (!(data.waterStrikeFt > 0)) {
       ctx.addIssue({ code: "custom", path: ["waterStrikeFt"], message: "Water-strike depth is required when water is found" });
