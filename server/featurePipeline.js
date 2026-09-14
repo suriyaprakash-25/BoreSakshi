@@ -24,6 +24,10 @@ export function validateTrainingTarget(target) {
   if (!finite(target?.lng) || target.lng < -180 || target.lng > 180) errors.push("valid lng is required");
   if (!iso(target?.drilledAt || target?.createdAt)) errors.push("drilledAt/createdAt is required for temporal leakage control");
   if (typeof target?.success !== "boolean") errors.push("success label must be boolean");
+  if (target?.validation?.valid === false) errors.push("source record failed Phase 2 validation");
+  if (target?.datasetEligible === false || target?.datasetEligibility?.eligible === false) errors.push("source record is not dataset eligible");
+  if (target?.duplicateOf) errors.push("duplicate source records cannot become training targets");
+  if (target?.reviewStatus && target.reviewStatus !== "approved") errors.push("staged source record is not approved");
   return { valid: errors.length === 0, errors };
 }
 
@@ -131,6 +135,7 @@ export function buildFeatureDataset({
     manifestSha256: sha256Json(manifest),
     sourceManifest,
     leakagePolicy: {
+      phase2EligibilityRequired: true,
       targetOutcomeExcludedFromFeatures: true,
       nearbyBorewellTemporalRule: "strictly-before-target-asOf",
       dynamicLayerTemporalRule: "latest-observation-not-after-target-asOf",
