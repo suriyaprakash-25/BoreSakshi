@@ -1,15 +1,6 @@
 // api.js — all backend calls in one place.
 const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
-// ---- operator session (localStorage) ---------------------------------------
-const AUTH_KEY = "boresakshi_auth"; // { token, operator: { id, name, phone } }
-
-export function getAuth() {
-  try { return JSON.parse(localStorage.getItem(AUTH_KEY)) || null; } catch { return null; }
-}
-export function setAuth(auth) { localStorage.setItem(AUTH_KEY, JSON.stringify(auth)); }
-export function clearAuth() { localStorage.removeItem(AUTH_KEY); }
-
 async function readError(res, fallback) {
   const body = await res.json().catch(() => ({}));
   const err = new Error(body.error || fallback);
@@ -68,6 +59,16 @@ export async function signout() {
     method: "POST",
     credentials: "include",
   }).catch(() => {});
+}
+
+// Restore the safe operator profile from the HTTP-only cookie. A missing or
+// expired session is normal for public visitors, so it resolves to null.
+export async function getSession() {
+  const res = await fetch(`${API}/api/auth/session`, { credentials: "include" });
+  if (res.status === 401 || res.status === 403) return null;
+  if (!res.ok) throw await readError(res, "Could not restore your session");
+  const data = await res.json();
+  return data.operator || null;
 }
 
 // ---- operator flow (auth required) -----------------------------------------
