@@ -265,6 +265,19 @@ app.patch("/api/admin/operators/:id", ...adminWrite, validate(adminOperatorPatch
 // flag/unflag or verify an individual log
 app.patch("/api/admin/logs/:id", ...adminWrite, validate(adminLogPatchSchema), asyncHandler(async (req, res) => {
   const patch = { ...req.body };
+  // Keep the legacy boolean and the explicit verification lifecycle coherent
+  // while existing clients and records are migrated incrementally.
+  if (patch.verified === true || patch.verificationStatus === "VERIFIED") {
+    patch.verified = true;
+    patch.verificationStatus = "VERIFIED";
+    patch.verifiedAt = new Date().toISOString();
+    patch.verifiedBy = req.operator.id;
+  } else if (patch.verified === false && patch.verificationStatus === undefined) {
+    patch.verificationStatus = "UNDER_REVIEW";
+  } else if (patch.verificationStatus && patch.verificationStatus !== "VERIFIED") {
+    patch.verified = false;
+  }
+
   if (patch.flagged === true) {
     patch.flagReason = (req.body.flagReason || "").trim();
     patch.flaggedAt = new Date().toISOString();
