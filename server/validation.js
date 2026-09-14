@@ -57,6 +57,17 @@ export const borewellSchema = z.object({
   predictionId: z.string().min(1).max(40).optional(),
 });
 
+export const observationSchema = z.object({
+  type: z.enum(["WATER_LEVEL", "YIELD", "MAINTENANCE"]),
+  observedAt: z.string().datetime().optional(),
+  waterLevelFt: z.number().min(0).max(5000).nullable().optional(),
+  yieldLpm: z.number().min(0).max(100000).nullable().optional(),
+  note: z.string().max(500).optional(),
+}).refine((d) =>
+  d.waterLevelFt != null || d.yieldLpm != null || Boolean(d.note?.trim()), {
+  message: "Provide a water level, yield, or observation note",
+});
+
 // admin can change an operator's status and verified flag — never role.
 export const adminOperatorPatchSchema = z.object({
   status: z.enum(["active", "deactivated"]).optional(),
