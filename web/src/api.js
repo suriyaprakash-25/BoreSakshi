@@ -106,6 +106,23 @@ export async function getMyBorewells() {
   return res.json();
 }
 
+export async function getBorewellObservations(id) {
+  const res = await fetch(`${API}/api/borewells/${id}/observations`, { credentials: "include" });
+  if (!res.ok) throw await readError(res, "Could not load observations");
+  return res.json();
+}
+
+export async function addBorewellObservation(id, payload) {
+  const res = await fetch(`${API}/api/borewells/${id}/observations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...csrfHeaders() },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await readError(res, "Could not save the observation");
+  return res.json();
+}
+
 // this operator's assigned sites still awaiting a log
 export async function getAssignments() {
   const res = await fetch(`${API}/api/assignments`, { credentials: "include" });
@@ -140,7 +157,7 @@ export async function adminPatchOperator(id, patch) {
 export async function adminPatchLog(id, patch) {
   const res = await fetch(`${API}/api/admin/logs/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...csrfHeaders() },
     credentials: "include",
     body: JSON.stringify(patch),
   });
