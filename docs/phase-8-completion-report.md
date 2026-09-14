@@ -6,6 +6,8 @@
 **Pull request:** #8  
 **Status:** Software implementation complete and CI-verified. Phase 9 owns the full verification/trust lifecycle; Phase 15 and Phase 18 retain security and durable-deployment obligations.
 
+> Final CI note: the complete Phase 4–8 workflow stack passed on the report-restoration head `a0b0ead0c7fcd44c2661f7aa654d09ad8847e4d2`. This annotation is documentation-only; runtime code was last changed on `4663e947003cb23f581dcc6cee34073a51f05d92`.
+
 ## Goal completed
 
 Phase 8 evolves the existing authenticated rig-operator workflow into a structured, evidence-backed drilling-outcome collection system without rewriting the working application.
