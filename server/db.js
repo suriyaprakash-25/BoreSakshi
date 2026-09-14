@@ -54,6 +54,14 @@ export const db = {
   async getBorewells() {
     return borewells.find({}, NO_MONGO_ID).limit(5000).toArray();
   },
+  // Only moderated records may influence a prediction. This keeps unreviewed or
+  // flagged operator submissions out of decision-support outputs.
+  async getPredictionEligibleBorewells() {
+    return borewells.find(
+      { verified: true, flagged: { $ne: true } },
+      NO_MONGO_ID
+    ).limit(5000).toArray();
+  },
   // admin: every log, newest first (flag/verify fields included)
   async getAllBorewells() {
     return borewells.find({}, NO_MONGO_ID).sort({ createdAt: -1 }).limit(5000).toArray();
@@ -78,6 +86,9 @@ export const db = {
   },
   async getPredictions() {
     return predictions.find({}, NO_MONGO_ID).limit(5000).toArray();
+  },
+  async getPredictionById(id) {
+    return predictions.findOne({ id }, NO_MONGO_ID);
   },
   async updatePrediction(id, patch) {
     const result = await predictions.findOneAndUpdate(
