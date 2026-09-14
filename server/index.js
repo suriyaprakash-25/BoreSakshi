@@ -62,7 +62,7 @@ app.post(
 app.post("/api/auth/signout", asyncHandler(signout));
 
 // ----------------------------------------------------------------------------
-// 1) LOG A BOREWELL (rig operator submits a completed job = verified outcome)
+// 1) LOG A BOREWELL (rig operator submits a completed job for admin review)
 // ----------------------------------------------------------------------------
 app.post("/api/borewells", requireAuth, validate(borewellSchema), asyncHandler(async (req, res) => {
   const { lat, lng, placeName, depthFt, strata, waterStrikeFt, yieldLpm, success, language, predictionId } = req.body;
@@ -144,7 +144,7 @@ app.get("/api/assignments", requireAuth, asyncHandler(async (req, res) =>
 app.post("/api/predict", predictLimiter, validate(predictSchema), asyncHandler(async (req, res) => {
   const { lat, lng, save: shouldSave = true } = req.body;
 
-  // The real verified drill logs within NEAR_KM — the SAME data that drives the
+  // Admin-verified, non-flagged drill logs within NEAR_KM — the same data that drives the
   // prediction, its `factors`, and its confidence. Annotated with distance and
   // sorted nearest-first so the frontend "nearby wells" explorer can show the
   // exact evidence behind the number.
