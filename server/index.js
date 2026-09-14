@@ -223,7 +223,7 @@ app.get("/api/admin/operators", ...adminRead, asyncHandler(async (_req, res) =>
 ));
 
 // every log across all operators (includes flag/verify moderation fields)
-app.get("/api/admin/logs", ...admin, asyncHandler(async (_req, res) =>
+app.get("/api/admin/logs", ...adminRead, asyncHandler(async (_req, res) =>
   res.json(await db.getAllBorewells())
 ));
 
