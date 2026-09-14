@@ -108,7 +108,14 @@ async function main() {
     assert(authCookie !== "", "Cookie was not set on signin");
   });
 
-  // 6. Operator Protected Routes
+  // 6. Cookie-backed session restoration
+  await runTest("GET /api/auth/session", async () => {
+    const res = await fetchAPI("/auth/session");
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(res.data.operator?.id, "Missing session operator");
+  });
+
+  // 7. Operator Protected Routes
   await runTest("GET /api/borewells/mine", async () => {
     const res = await fetchAPI("/borewells/mine");
     assert(res.status === 200, `Expected 200, got ${res.status}`);
@@ -135,13 +142,13 @@ async function main() {
     assert(res.data.scoredPredictions === 1, "Explicitly linked prediction was not scored");
   });
 
-  // 7. Admin Protected Routes (Should fail with 403 since we are a normal operator)
+  // 8. Admin Protected Routes (Should fail with 403 since we are a normal operator)
   await runTest("GET /api/admin/operators (Role check)", async () => {
     const res = await fetchAPI("/admin/operators");
     assert(res.status === 403, `Expected 403 Forbidden, got ${res.status}`);
   });
 
-  // 8. Signout
+  // 9. Signout
   await runTest("POST /api/auth/signout", async () => {
     const res = await fetchAPI("/auth/signout", { method: "POST" });
     assert(res.status === 200, `Expected 200, got ${res.status}`);
@@ -149,7 +156,7 @@ async function main() {
     authCookie = res.headers?.get("set-cookie")?.split(';')[0] || ""; // should be a clear cookie
   });
 
-  // 9. Verify Unauthorized access after signout
+  // 10. Verify Unauthorized access after signout
   await runTest("GET /api/borewells/mine (Unauthorized)", async () => {
     // We send empty authCookie
     authCookie = "";
