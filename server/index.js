@@ -60,6 +60,11 @@ app.post(
   asyncHandler(signin)
 );
 app.post("/api/auth/signout", asyncHandler(signout));
+// The client restores its UI state from the HTTP-only cookie; it never needs to
+// persist a token or profile in browser storage.
+app.get("/api/auth/session", requireAuth, asyncHandler(async (req, res) => {
+  res.json({ operator: req.operator });
+}));
 
 // ----------------------------------------------------------------------------
 // 1) LOG A BOREWELL (rig operator submits a completed job for admin review)
