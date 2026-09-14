@@ -75,7 +75,10 @@ export async function signout() {
 // expired session is normal for public visitors, so it resolves to null.
 export async function getSession() {
   const res = await fetch(`${API}/api/auth/session`, { credentials: "include" });
-  if (res.status === 401 || res.status === 403) return null;
+  if (res.status === 401 || res.status === 403) {
+    setCsrfToken(null);
+    return null;
+  }
   if (!res.ok) throw await readError(res, "Could not restore your session");
   const data = await res.json();
   setCsrfToken(data.csrfToken);
