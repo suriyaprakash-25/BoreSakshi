@@ -98,6 +98,8 @@ python -m pytest -q
 
 The tests verify the strict feature contract, label leakage prevention, correct water-strike target, roadmap candidate registry, candidate serialization, offline probability/regression inference, and minimum-data blocking.
 
+GitHub Actions also runs `.github/workflows/phase4-ml.yml`, which executes the Python Phase 4 tests plus the Phase 3→4 JavaScript feature-contract/syntax checks.
+
 ## Phase boundary
 
 Phase 4 trains and registers real-model candidates. Phase 5 must spatially evaluate those candidates and publish measured metrics/calibration/uncertainty before one is selected. Phase 6 then exposes the selected models through the Python ML service and integrates Node → Python inference.
