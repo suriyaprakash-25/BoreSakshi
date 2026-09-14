@@ -7,7 +7,7 @@ import cookieParser from "cookie-parser";
 import { nanoid } from "nanoid";
 import { db, connectDB, pingDB } from "./db.js";
 import { predictBorewell, distanceKm, NEAR_KM } from "./predict.js";
-import { signup, signin, signout, requireAuth, requireAdmin } from "./auth.js";
+import { signup, signin, signout, requireAuth, requireAdmin, requireCsrf } from "./auth.js";
 import {
   validate, signupSchema, signinSchema, predictSchema, borewellSchema,
   adminOperatorPatchSchema, adminLogPatchSchema,
@@ -19,7 +19,8 @@ import {
 const app = express();
 app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:5173",
-  credentials: true
+  credentials: true,
+  allowedHeaders: ["Content-Type", "X-CSRF-Token"],
 }));
 app.use(cookieParser());
 app.use(express.json({ limit: "10kb" })); // reject oversized payloads (→ 413)
@@ -59,17 +60,17 @@ app.post(
   signinBruteLimiter,          // then count failed attempts per phone number
   asyncHandler(signin)
 );
-app.post("/api/auth/signout", asyncHandler(signout));
+app.post("/api/auth/signout", requireAuth, requireCsrf, asyncHandler(signout));
 // The client restores its UI state from the HTTP-only cookie; it never needs to
 // persist a token or profile in browser storage.
 app.get("/api/auth/session", requireAuth, asyncHandler(async (req, res) => {
-  res.json({ operator: req.operator });
+  res.json({ operator: req.operator, csrfToken: req.csrfToken });
 }));
 
 // ----------------------------------------------------------------------------
 // 1) LOG A BOREWELL (rig operator submits a completed job for admin review)
 // ----------------------------------------------------------------------------
-app.post("/api/borewells", requireAuth, validate(borewellSchema), asyncHandler(async (req, res) => {
+app.post("/api/borewells", requireAuth, requireCsrf, validate(borewellSchema), asyncHandler(async (req, res) => {
   const { lat, lng, placeName, depthFt, strata, waterStrikeFt, yieldLpm, success, language, predictionId } = req.body;
 
   // Validate a requested accountability link before storing the field record so
@@ -213,10 +214,11 @@ app.get("/api/ledger", asyncHandler(async (_req, res) => {
 // ----------------------------------------------------------------------------
 // 4) ADMIN — platform oversight. Every route requires an admin account.
 // ----------------------------------------------------------------------------
-const admin = [requireAuth, requireAdmin];
+const adminRead = [requireAuth, requireAdmin];
+const adminWrite = [requireAuth, requireAdmin, requireCsrf];
 
 // all operator accounts (no password hashes)
-app.get("/api/admin/operators", ...admin, asyncHandler(async (_req, res) =>
+app.get("/api/admin/operators", ...adminRead, asyncHandler(async (_req, res) =>
   res.json(await db.getOperators())
 ));
 
@@ -226,7 +228,7 @@ app.get("/api/admin/logs", ...admin, asyncHandler(async (_req, res) =>
 ));
 
 // deactivate/reactivate or verify an operator (never role — no in-app role mgmt)
-app.patch("/api/admin/operators/:id", ...admin, validate(adminOperatorPatchSchema), asyncHandler(async (req, res) => {
+app.patch("/api/admin/operators/:id", ...adminWrite, validate(adminOperatorPatchSchema), asyncHandler(async (req, res) => {
   const updated = await db.updateOperator(req.params.id, req.body);
   if (!updated) return res.status(404).json({ error: "Operator not found" });
   const { passwordHash, ...safe } = updated; // belt-and-braces
@@ -234,7 +236,7 @@ app.patch("/api/admin/operators/:id", ...admin, validate(adminOperatorPatchSchem
 }));
 
 // flag/unflag or verify an individual log
-app.patch("/api/admin/logs/:id", ...admin, validate(adminLogPatchSchema), asyncHandler(async (req, res) => {
+app.patch("/api/admin/logs/:id", ...adminWrite, validate(adminLogPatchSchema), asyncHandler(async (req, res) => {
   const patch = { ...req.body };
   if (patch.flagged === true) {
     patch.flagReason = (req.body.flagReason || "").trim();
