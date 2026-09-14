@@ -98,8 +98,8 @@ def parse_ascii_grid(text: str) -> dict[str, Any]:
 
     ncols, nrows = int(header["ncols"]), int(header["nrows"])
     cellsize = float(header["cellsize"])
-    xllcorner = header.get("xllcorner", header["xllcenter"] - cellsize / 2)
-    yllcorner = header.get("yllcorner", header["yllcenter"] - cellsize / 2)
+    xllcorner = header["xllcorner"] if "xllcorner" in header else header["xllcenter"] - cellsize / 2
+    yllcorner = header["yllcorner"] if "yllcorner" in header else header["yllcenter"] - cellsize / 2
     rows = [[float(value) for value in line.split()] for line in lines[data_start:]]
     if len(rows) != nrows or any(len(row) != ncols for row in rows):
         raise FeatureManifestError("ASCII grid data shape does not match header")
