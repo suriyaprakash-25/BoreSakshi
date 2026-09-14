@@ -7,6 +7,7 @@ import path from "path";
 
 import { borewellSchema, adminLogPatchSchema, validate } from "../validation.js";
 import { buildOperatorBorewellRecord, isTrustedOutcome } from "../rigData.js";
+import { isTrustedBorewellEvidence, validateTrainingTarget } from "../featurePipeline.js";
 import {
   bindEvidenceToBorewell,
   readStoredEvidence,
@@ -15,6 +16,7 @@ import {
   verifyEvidenceToken,
 } from "../rigEvidence.js";
 import { createPhase8Router } from "../phase8Routes.js";
+import { averageDepth, successRate, trustScore, trustedOutcomeLogs } from "../../web/src/metrics.js";
 
 function validPayload() {
   return {
@@ -244,4 +246,54 @@ test("a prediction created after the drilling outcome is never scored", async ()
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("offline Phase 3 targets and nearby evidence reject unverified or flagged operator submissions", () => {
+  const base = {
+    id: "operator-well",
+    lat: 11,
+    lng: 77,
+    drilledAt: "2026-09-14T00:00:00Z",
+    success: true,
+    depthFt: 300,
+    waterStrikeFt: 220,
+    yieldLpm: 40,
+    rigSubmissionSchemaVersion: "8.0.0",
+    provenance: { sourceType: "operator" },
+    datasetEligibility: { eligible: false },
+    verified: false,
+    flagged: false,
+  };
+  assert.equal(validateTrainingTarget(base).valid, false);
+  assert.equal(isTrustedBorewellEvidence(base), false);
+
+  const verified = { ...base, verified: true, datasetEligibility: { eligible: true } };
+  assert.equal(validateTrainingTarget(verified).valid, true);
+  assert.equal(isTrustedBorewellEvidence(verified), true);
+
+  const flagged = { ...verified, flagged: true };
+  assert.equal(validateTrainingTarget(flagged).valid, false);
+  assert.equal(isTrustedBorewellEvidence(flagged), false);
+});
+
+test("pending/flagged submissions cannot change groundwater or trust outcome metrics", () => {
+  const logs = [
+    {
+      id: "trusted", verified: true, flagged: false, datasetEligibility: { eligible: true },
+      success: false, depthFt: 400, strata: "hard crystalline rock", createdAt: new Date().toISOString(),
+    },
+    {
+      id: "pending", verified: false, flagged: false, datasetEligibility: { eligible: false },
+      success: true, depthFt: 10, waterStrikeFt: 5, yieldLpm: 99999, strata: "weathered rock", createdAt: new Date().toISOString(),
+    },
+    {
+      id: "flagged", verified: true, flagged: true, datasetEligibility: { eligible: false },
+      success: true, depthFt: 20, waterStrikeFt: 10, yieldLpm: 99999, strata: "weathered rock", createdAt: new Date().toISOString(),
+    },
+  ];
+  assert.deepEqual(trustedOutcomeLogs(logs).map((item) => item.id), ["trusted"]);
+  assert.equal(successRate(logs), 0);
+  assert.equal(averageDepth(logs), 400);
+  const baseline = trustScore([logs[0]], { verified: false });
+  assert.deepEqual(trustScore(logs, { verified: false }), baseline);
 });
