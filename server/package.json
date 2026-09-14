@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "test:predict": "node test_predict.js",
+    "test:api": "node test_api.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
