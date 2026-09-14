@@ -1,0 +1,59 @@
+name: Phase 8 Rig Operator Data
+
+on:
+  pull_request:
+    paths:
+      - "server/**"
+      - "web/**"
+      - ".github/workflows/phase8-rig-data.yml"
+      - "docs/phase-8-*.md"
+  push:
+    branches:
+      - "phase-8-rig-operator-data"
+
+jobs:
+  rig-data-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: server/package-lock.json
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+      - name: Syntax-check Phase 8 server path
+        run: |
+          node --check server/index.js
+          node --check server/phase8Routes.js
+          node --check server/rigData.js
+          node --check server/rigEvidence.js
+          node --check server/scripts/cleanup-rig-evidence.js
+      - name: Run Phase 8 trust-boundary tests
+        working-directory: server
+        env:
+          JWT_SECRET: phase8-ci-secret-not-for-production
+        run: npm run test:phase8
+      - name: Re-run Phase 7 Node prediction contract tests
+        working-directory: server
+        env:
+          JWT_SECRET: phase8-ci-secret-not-for-production
+        run: npm run test:phase7
+
+  farmer-operator-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+      - name: Build farmer/operator/admin web app
+        working-directory: web
+        run: npm run build
