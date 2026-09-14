@@ -41,16 +41,60 @@ export const predictSchema = z.object({
   save: z.boolean().optional(),
 });
 
+export const geologicalLayerSchema = z.object({
+  fromFt: z.number().min(0).max(5000),
+  toFt: z.number().min(0).max(5000),
+  material: z.string().trim().min(1, "Layer material is required").max(80),
+  notes: z.string().trim().max(240).optional().default(""),
+});
+
 export const borewellSchema = z.object({
   lat,
   lng,
-  placeName: z.string().max(80).optional(),
-  depthFt: z.number().min(0).max(5000).nullable().optional(),
-  strata: z.string().max(120).optional(),
-  waterStrikeFt: z.number().min(0).max(5000).nullable().optional(),
-  yieldLpm: z.number().min(0).max(100000).nullable().optional(),
+  gpsAccuracyM: z.number().min(0, "GPS accuracy is required").max(5000, "GPS accuracy is implausibly large"),
+  gpsCapturedAt: z.string().datetime({ offset: true }),
+  drillingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "drillingDate must be YYYY-MM-DD"),
+  placeName: z.string().trim().max(80).optional().default(""),
+  depthFt: z.number().positive("Total depth must be greater than zero").max(5000),
+  strata: z.string().trim().max(120).optional().default(""),
+  geologicalLayers: z.array(geologicalLayerSchema).min(1, "At least one geological layer is required").max(20),
+  waterStrikeFt: z.number().min(0).max(5000).nullable(),
+  yieldLpm: z.number().min(0).max(100000).nullable(),
   success: z.boolean({ error: "success (true/false) is required" }),
+  evidenceTokens: z.array(z.string().min(20).max(4096)).min(1, "At least one evidence photo is required").max(10),
   language: z.string().max(10).optional(),
+}).superRefine((data, ctx) => {
+  if (data.success) {
+    if (!(data.waterStrikeFt > 0)) {
+      ctx.addIssue({ code: "custom", path: ["waterStrikeFt"], message: "Water-strike depth is required when water is found" });
+    } else if (data.waterStrikeFt > data.depthFt) {
+      ctx.addIssue({ code: "custom", path: ["waterStrikeFt"], message: "Water-strike depth cannot exceed total depth" });
+    }
+    if (!(data.yieldLpm > 0)) {
+      ctx.addIssue({ code: "custom", path: ["yieldLpm"], message: "Yield is required when water is found" });
+    }
+  } else {
+    if (data.waterStrikeFt !== 0) {
+      ctx.addIssue({ code: "custom", path: ["waterStrikeFt"], message: "Dry-hole waterStrikeFt must be 0" });
+    }
+    if (data.yieldLpm !== 0) {
+      ctx.addIssue({ code: "custom", path: ["yieldLpm"], message: "Dry-hole yieldLpm must be 0" });
+    }
+  }
+
+  let previousTo = 0;
+  data.geologicalLayers.forEach((layer, index) => {
+    if (layer.toFt <= layer.fromFt) {
+      ctx.addIssue({ code: "custom", path: ["geologicalLayers", index, "toFt"], message: "Layer end depth must be greater than start depth" });
+    }
+    if (layer.toFt > data.depthFt) {
+      ctx.addIssue({ code: "custom", path: ["geologicalLayers", index, "toFt"], message: "Geological layer cannot extend below total drilled depth" });
+    }
+    if (index > 0 && layer.fromFt < previousTo) {
+      ctx.addIssue({ code: "custom", path: ["geologicalLayers", index, "fromFt"], message: "Geological layers cannot overlap" });
+    }
+    previousTo = Math.max(previousTo, layer.toFt);
+  });
 });
 
 // admin can change an operator's status and verified flag — never role.
@@ -61,7 +105,8 @@ export const adminOperatorPatchSchema = z.object({
   message: "Nothing to update",
 });
 
-// admin can flag/unflag a log (with a reason) and toggle its verified badge.
+// Phase 8 keeps the existing simple admin verification toggle for compatibility.
+// Phase 9 will expand this into the full SUBMITTED→UNDER_REVIEW→VERIFIED/REJECTED lifecycle.
 export const adminLogPatchSchema = z.object({
   flagged: z.boolean().optional(),
   flagReason: z.string().max(200).optional(),
