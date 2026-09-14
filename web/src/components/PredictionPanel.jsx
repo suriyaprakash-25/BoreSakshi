@@ -195,7 +195,7 @@ function PredictionReference({ predictionId }) {
     <div className="prediction-reference">
       <div>
         <strong>Drilling reference</strong>
-        <p>Give this to the rig operator after drilling so the verified result can be linked to this estimate.</p>
+        <p>Give this to the rig operator after drilling so the recorded outcome can be linked to this estimate.</p>
         <code>{predictionId}</code>
       </div>
       <button type="button" className="btn btn-ghost prediction-copy" onClick={copyPredictionReference}>
