@@ -13,7 +13,7 @@ import {
   adminOperatorPatchSchema, adminLogPatchSchema,
 } from "./validation.js";
 import {
-  asyncHandler, authLimiter, signinBruteLimiter, notFound, errorHandler,
+  asyncHandler, authLimiter, signinBruteLimiter, predictLimiter, notFound, errorHandler,
 } from "./middleware.js";
 
 const app = express();
@@ -31,6 +31,14 @@ app.use(morgan("dev")); // request logging
 if (process.env.TRUST_PROXY) app.set("trust proxy", Number(process.env.TRUST_PROXY));
 
 const PORT = process.env.PORT || 4000;
+
+// Public borewell discovery is intentionally approximate: the map still works
+// while avoiding publication of a farmer's exact drilling location or operator identity.
+const toPublicBorewell = ({ operatorId, operatorName, lat, lng, ...record }) => ({
+  ...record,
+  lat: Math.round(lat * 100) / 100,
+  lng: Math.round(lng * 100) / 100,
+});
 // NEAR_KM ("nearby" radius for confidence, ledger matching + explainability)
 // is defined once in predict.js and imported so both files can never drift.
 
@@ -57,7 +65,7 @@ app.post("/api/auth/signout", asyncHandler(signout));
 // 1) LOG A BOREWELL (rig operator submits a completed job = verified outcome)
 // ----------------------------------------------------------------------------
 app.post("/api/borewells", requireAuth, validate(borewellSchema), asyncHandler(async (req, res) => {
-  const { lat, lng, placeName, depthFt, strata, waterStrikeFt, yieldLpm, success, language } = req.body;
+  const { lat, lng, placeName, depthFt, strata, waterStrikeFt, yieldLpm, success, language, predictionId } = req.body;
   const record = {
     id: nanoid(10),
     lat, lng,
@@ -85,27 +93,34 @@ app.post("/api/borewells", requireAuth, validate(borewellSchema), asyncHandler(a
   const near = pending.find((a) => distanceKm({ lat, lng }, { lat: a.lat, lng: a.lng }) <= 2);
   if (near) await db.updateAssignment(near.id, { status: "logged", loggedBorewellId: record.id, loggedAt: record.createdAt });
 
-  // ACCOUNTABILITY LOOP: if this outcome sits near an earlier prediction that
-  // is still open, close it out by scoring predicted-vs-actual.
-  const openPreds = (await db.getPredictions()).filter((p) => p.actual == null);
+  // ACCOUNTABILITY LOOP: location proximity is not enough to link an outcome to
+  // a request. Score at most the explicit prediction selected by the operator.
   let scoredPredictions = 0;
-  for (const p of openPreds) {
-    if (distanceKm({ lat, lng }, { lat: p.lat, lng: p.lng }) <= NEAR_KM) {
-      const predictedSuccess = p.successProbability >= 50;
-      await db.updatePrediction(p.id, {
-        actual: { success: record.success, depthFt: record.depthFt, borewellId: record.id, closedAt: record.createdAt },
-        correct: predictedSuccess === record.success,
-      });
-      scoredPredictions++;
+  if (predictionId) {
+    const prediction = await db.getPredictionById(predictionId);
+    if (!prediction) return res.status(404).json({ error: "Prediction not found" });
+    if (prediction.actual != null) return res.status(409).json({ error: "Prediction already has an outcome" });
+    if (distanceKm({ lat, lng }, { lat: prediction.lat, lng: prediction.lng }) > NEAR_KM) {
+      return res.status(400).json({ error: `Outcome must be within ${NEAR_KM} km of the linked prediction` });
     }
+
+    const predictedSuccess = prediction.successProbability >= 50;
+    await db.updatePrediction(prediction.id, {
+      actual: { success: record.success, depthFt: record.depthFt, borewellId: record.id, closedAt: record.createdAt },
+      correct: predictedSuccess === record.success,
+    });
+    scoredPredictions = 1;
   }
 
-  // scoredPredictions = how many open predictions this real outcome just closed
-  // out on the accountability ledger (0 if none were pending nearby).
+  // An outcome with no explicit prediction remains valuable verified field data,
+  // but cannot be used to claim prediction accuracy.
   res.status(201).json({ ...record, scoredPredictions });
 }));
 
-app.get("/api/borewells", asyncHandler(async (_req, res) => res.json(await db.getBorewells())));
+app.get("/api/borewells", asyncHandler(async (_req, res) => {
+  const logs = await db.getPredictionEligibleBorewells();
+  res.json(logs.map(toPublicBorewell));
+}));
 
 // this operator's own logs (newest first) — powers their dashboard + history
 app.get("/api/borewells/mine", requireAuth, asyncHandler(async (req, res) =>
@@ -120,14 +135,14 @@ app.get("/api/assignments", requireAuth, asyncHandler(async (req, res) =>
 // ----------------------------------------------------------------------------
 // 2) PREDICT for a location (farmer drops a pin). Stored so we can score it later.
 // ----------------------------------------------------------------------------
-app.post("/api/predict", validate(predictSchema), asyncHandler(async (req, res) => {
+app.post("/api/predict", predictLimiter, validate(predictSchema), asyncHandler(async (req, res) => {
   const { lat, lng, save: shouldSave = true } = req.body;
 
   // The real verified drill logs within NEAR_KM — the SAME data that drives the
   // prediction, its `factors`, and its confidence. Annotated with distance and
   // sorted nearest-first so the frontend "nearby wells" explorer can show the
   // exact evidence behind the number.
-  const nearbyLogs = (await db.getBorewells())
+  const nearbyLogs = (await db.getPredictionEligibleBorewells())
     .map((b) => ({ ...b, distanceKm: distanceKm({ lat, lng }, b) }))
     .filter((b) => b.distanceKm <= NEAR_KM)
     .sort((a, b) => a.distanceKm - b.distanceKm);
@@ -176,7 +191,7 @@ app.get("/api/ledger", asyncHandler(async (_req, res) => {
     correct,
     accuracyPct: accuracy,
     recent: closed.slice(-10).reverse().map((p) => ({
-      id: p.id, lat: p.lat, lng: p.lng,
+      id: p.id, lat: Math.round(p.lat * 100) / 100, lng: Math.round(p.lng * 100) / 100,
       predictedSuccessPct: p.successProbability,
       actualSuccess: p.actual.success,
       correct: p.correct,
