@@ -8,7 +8,9 @@
     "start": "node index.js",
     "dev": "node --watch index.js",
     "test:predict": "node test_predict.js",
-    "test:api": "node test_api.js"
+    "test:api": "node test_api.js",
+    "backfill:domain:dry": "node backfill_domain.js",
+    "backfill:domain:apply": "node backfill_domain.js --apply"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
