@@ -41,6 +41,14 @@ test("invalid target dates are skipped rather than leaking future data", () => {
   assert.ok(dataset.report.skipped[0].errors.some((e) => e.includes("temporal leakage")));
 });
 
+test("Phase 2 invalid or ineligible records are rejected as training targets", () => {
+  const bad = { ...targets[0], id: "blocked", datasetEligibility: { eligible: false }, reviewStatus: "rejected" };
+  const built = buildTrainingFeatureRow(bad, { layers: loadedLayers, borewells: targets, datasetVersion: manifest.datasetVersion, nearbyRadiusKm: 5, densityRadiusKm: 2, spatialBlockDeg: 0.1 });
+  assert.equal(built.ok, false);
+  assert.ok(built.errors.some((e) => e.includes("not dataset eligible")));
+  assert.ok(built.errors.some((e) => e.includes("not approved")));
+});
+
 test("dataset digest is deterministic independent of generatedAt metadata", () => {
   const a = buildFeatureDataset({ manifest, loadedLayers, targets, borewells: targets, generatedAt: "2026-09-15T00:00:00Z" });
   const b = buildFeatureDataset({ manifest, loadedLayers, targets, borewells: targets, generatedAt: "2026-09-16T00:00:00Z" });
