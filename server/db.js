@@ -71,6 +71,9 @@ export const db = {
   async getBorewells() {
     return borewells.find({}, NO_MONGO_ID).limit(5000).toArray();
   },
+  async getBorewellById(id) {
+    return borewells.findOne({ id }, NO_MONGO_ID);
+  },
   // Only moderated records may influence a prediction. This keeps unreviewed or
   // flagged operator submissions out of decision-support outputs.
   async getPredictionEligibleBorewells() {
@@ -100,6 +103,10 @@ export const db = {
   },
   async getObservationsByBorewellId(borewellId) {
     return borewellObservations.find({ borewellId }, NO_MONGO_ID).sort({ observedAt: -1 }).limit(5000).toArray();
+  },
+  async addObservation(observation) {
+    await borewellObservations.insertOne({ ...observation });
+    return observation;
   },
 
   // --- predictions we issued (for the accountability ledger) ---
