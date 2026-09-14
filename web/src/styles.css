@@ -3296,6 +3296,65 @@ code {
   font-size: 14px;
 }
 
+.observation-panel {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.observation-panel h3 {
+  margin: 0 0 9px;
+  font-size: 13px;
+  color: var(--navy);
+}
+
+.observation-loading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--slate);
+  font-size: 12px;
+  padding: 6px 0;
+}
+
+.observation-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.observation-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 9px;
+  color: var(--slate);
+  font-size: 12px;
+}
+
+.observation-list strong {
+  color: var(--ink);
+}
+
+.observation-form {
+  display: grid;
+  grid-template-columns: 150px minmax(130px, 1fr) minmax(160px, 1fr) auto;
+  gap: 8px;
+}
+
+.observation-form .op-input {
+  min-width: 0;
+  font-size: 12.5px;
+  padding: 8px 10px;
+}
+
+@media (max-width: 620px) {
+  .observation-form {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .btn.is-on {
   border-color: var(--mint);
   color: var(--mint-ink);
