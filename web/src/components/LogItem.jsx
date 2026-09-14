@@ -1,10 +1,8 @@
-// LogItem.jsx — one log card. Reused by the operator History page, the admin
-// operator-detail page, and the flagged-logs list. Shows the verified/flagged
-// badges everywhere; renders admin flag/verify controls only when `adminActions`
-// is passed.
+// LogItem.jsx — one log card used by operator/admin views.
 import { useState } from "react";
 import {
   MapPin, Droplets, DropletOff, Ruler, Waves, Layers, BadgeCheck, Flag, FlagOff,
+  Clock3, Camera, Video, LocateFixed,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { placeLabel, fmtDate } from "../metrics.js";
@@ -16,15 +14,18 @@ export default function LogItem({ log, showOperator = false, adminActions = null
 
   async function run(fn, successMsg) {
     setBusy(true);
-    try { 
-      await fn(); 
+    try {
+      await fn();
       if (successMsg) toast.success(successMsg);
-    } catch (e) { 
-      toast.error(e.message); 
-    } finally { 
-      setBusy(false); 
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setBusy(false);
     }
   }
+
+  const photoCount = log.evidenceSummary?.photoCount ?? (log.evidence || []).filter((item) => item.kind === "photo").length;
+  const videoCount = log.evidenceSummary?.videoCount ?? (log.evidence || []).filter((item) => item.kind === "video").length;
 
   return (
     <li className={`card log-card ${log.flagged ? "is-flagged" : ""}`}>
@@ -32,14 +33,19 @@ export default function LogItem({ log, showOperator = false, adminActions = null
         <div className="log-card-main">
           <div className="log-card-place">
             <MapPin size={15} strokeWidth={2.2} /> {placeLabel(log)}
-            {log.verified && (
+            {log.verified ? (
               <span className="log-badge verified" title="Verified log">
                 <BadgeCheck size={13} strokeWidth={2.4} /> Verified
+              </span>
+            ) : (
+              <span className="log-badge" title="Submitted and awaiting verification">
+                <Clock3 size={13} strokeWidth={2.4} /> Pending verification
               </span>
             )}
           </div>
           <div className="log-card-sub">
-            {fmtDate(log.createdAt)}
+            {fmtDate(log.drilledAt || log.createdAt)}
+            {log.drillingDate ? <> · drilled {log.drillingDate}</> : null}
             {showOperator && log.operatorName && <> · <span className="log-card-op">{log.operatorName}</span></>}
           </div>
         </div>
@@ -61,7 +67,10 @@ export default function LogItem({ log, showOperator = false, adminActions = null
         <span><Ruler size={13} strokeWidth={2.2} /> {log.depthFt != null ? `${log.depthFt} ft` : "—"} depth</span>
         <span><Droplets size={13} strokeWidth={2.2} /> {log.waterStrikeFt ? `${log.waterStrikeFt} ft` : "—"} strike</span>
         <span><Waves size={13} strokeWidth={2.2} /> {log.yieldLpm ? `${log.yieldLpm} LPM` : "—"}</span>
-        <span><Layers size={13} strokeWidth={2.2} /> {log.strata || "—"}</span>
+        <span><Layers size={13} strokeWidth={2.2} /> {log.geologicalLayers?.length ? `${log.geologicalLayers.length} layer${log.geologicalLayers.length === 1 ? "" : "s"}` : (log.strata || "—")}</span>
+        {log.gps?.accuracyM != null && <span><LocateFixed size={13} strokeWidth={2.2} /> GPS ±{log.gps.accuracyM} m</span>}
+        {photoCount > 0 && <span><Camera size={13} strokeWidth={2.2} /> {photoCount} photo{photoCount === 1 ? "" : "s"}</span>}
+        {videoCount > 0 && <span><Video size={13} strokeWidth={2.2} /> {videoCount} video{videoCount === 1 ? "" : "s"}</span>}
       </div>
 
       {log.flagged && log.flagReason && (
@@ -74,13 +83,8 @@ export default function LogItem({ log, showOperator = false, adminActions = null
       {adminActions && (
         flagging ? (
           <div className="log-actions log-flag-form">
-            <input
-              className="op-input log-flag-input"
-              placeholder="Reason for flag (optional) — e.g. implausible yield"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              autoFocus
-            />
+            <input className="op-input log-flag-input" placeholder="Reason for flag (optional) — e.g. implausible yield"
+              value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
             <button className="btn btn-primary btn-sm" disabled={busy}
               onClick={() => run(async () => { await adminActions.flagLog(log.id, reason); setFlagging(false); setReason(""); }, "Log flagged successfully")}>
               <Flag size={14} strokeWidth={2.2} /> Flag
@@ -100,7 +104,7 @@ export default function LogItem({ log, showOperator = false, adminActions = null
               </button>
             )}
             <button className={`btn btn-ghost btn-sm ${log.verified ? "is-on" : ""}`} disabled={busy}
-              onClick={() => run(() => adminActions.setLogVerified(log.id, !log.verified), log.verified ? "Log unverified" : "Log verified successfully")}>
+              onClick={() => run(() => adminActions.setLogVerified(log.id, !log.verified), log.verified ? "Log moved back to pending" : "Log verified — ledger eligibility updated")}>
               <BadgeCheck size={14} strokeWidth={2.2} /> {log.verified ? "Unverify" : "Verify"}
             </button>
           </div>
