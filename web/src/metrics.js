@@ -1,5 +1,5 @@
 // metrics.js — pure helpers for operator/admin stats.
-// Phase 8 trust rule: outcome/groundwater metrics use verified, unflagged,
+// Phase 8 trust rule: outcome/groundwater/trust metrics use verified, unflagged,
 // dataset-eligible records only. Submission/activity counts may include pending logs.
 
 export const STRATA_BUCKETS = [
@@ -69,8 +69,6 @@ export function logsPerMonth(logs, months = 6) {
   return buckets;
 }
 
-// Geological composition is an outcome/ground-truth metric, so pending/flagged
-// submissions are excluded until verification.
 export function strataBreakdown(logs) {
   const counts = new Map();
   for (const l of trustedOutcomeLogs(logs)) {
@@ -82,27 +80,26 @@ export function strataBreakdown(logs) {
     .filter((b) => b.count > 0);
 }
 
-// Legacy operator-contribution indicator retained for UI continuity. Phase 9 owns
-// the production trust-score redesign; this is not used as an ML/data eligibility gate.
+// Legacy contribution indicator retained only for UI continuity until Phase 9
+// replaces it with the production trust model. Even this indicator uses verified
+// outcomes only so pending/flagged data cannot boost a trust-related metric.
 export const VERIFIED_TRUST_BONUS = 12;
 
 export function trustScore(logs, { verified = false } = {}) {
+  const trusted = trustedOutcomeLogs(logs);
   let base = 0;
-  if (logs.length) {
-    const volume = Math.min(1, logs.length / 20);
-
+  if (trusted.length) {
+    const volume = Math.min(1, trusted.length / 20);
     const completeness =
-      logs.reduce((sum, l) => {
+      trusted.reduce((sum, l) => {
         const expected = ["depthFt", "strata"];
         if (l.success) expected.push("waterStrikeFt", "yieldLpm");
         const filled = expected.filter((f) => l[f] !== null && l[f] !== undefined && l[f] !== "").length;
         return sum + filled / expected.length;
-      }, 0) / logs.length;
-
-    const newest = Math.max(...logs.map((l) => new Date(l.createdAt).getTime()));
+      }, 0) / trusted.length;
+    const newest = Math.max(...trusted.map((l) => new Date(l.createdAt).getTime()));
     const days = (Date.now() - newest) / 86400000;
     const recency = days <= 30 ? 1 : days <= 60 ? 0.5 : 0;
-
     base = Math.round(100 * (0.5 * volume + 0.35 * completeness + 0.15 * recency));
   }
 
