@@ -13,7 +13,7 @@
     "test:phase3": "node --test test/geospatial.test.js test/featurePipeline.test.js",
     "test:phase6": "node --test test/mlClient.test.js test/predictPhase6.test.js",
     "test:phase7": "node --test test/mlClient.test.js test/predictPhase6.test.js test/predictionContract.test.js",
-    "test:phase8": "node --test test/phase8.test.js",
+    "test:phase8": "node --test test/phase8.test.js test/phase8-compat.test.js",
     "rig:evidence:cleanup": "node scripts/cleanup-rig-evidence.js",
     "dataset:validate": "node scripts/validate-dataset.js",
     "features:build": "node scripts/build-feature-dataset.js",
