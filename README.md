@@ -6,9 +6,9 @@ Know before you drill — a verified-outcome network + AI prediction engine that
 
 ```text
 boresakshi/
-├── server/   Node + Express + MongoDB API, trusted-data orchestration and accountability ledger
+├── server/   Node + Express + MongoDB API, prediction-contract validation and accountability ledger
 ├── web/      React + Vite + Leaflet farmer/operator/admin UI
-└── ml/       Phase 4 training + Phase 5 evaluation + Phase 6 FastAPI inference service
+└── ml/       training + scientific evaluation + FastAPI serving + activation preflight
 ```
 
 ## Runtime prediction path
@@ -20,33 +20,43 @@ Node /api/predict
    ↓ verified/unflagged/eligible wells only
 Python /ml/predict
    ↓
-Live geospatial feature extraction
+Live checksum-verified geospatial feature extraction
    ↓
-Phase 5 selected success + depth + yield models
+Phase 5-selected success + depth + yield models
    ↓
 Calibration + conformal uncertainty + explanations
    ↓
-Node persistence/accountability ledger
+Phase 7 versioned prediction-contract validation
+   ↓
+Node contract validation + persistence/accountability ledger
 ```
 
-If the Python service is unavailable, times out, rejects low feature coverage, or its circuit breaker is open, Node returns the existing deterministic heuristic **only as an explicitly labelled `heuristic_fallback`**. It is never presented as ML.
+Every accepted ML prediction carries a model version, feature version, prediction timestamp, uncertainty, explanations, coverage metadata and an immutable `featureSnapshotRef`. If the Python service is unavailable or returns an invalid/insufficient-coverage response, Node returns the deterministic heuristic **only as an explicitly labelled `heuristic_fallback`**. It is never presented as ML.
 
 ## Run locally
 
 **1) Python ML service**
 
-The service remains not-ready until reviewed real Phase 4/5 artifacts, the live geospatial manifest, and the explicit Phase 6 approval gate are configured.
+The service remains not-ready until reviewed real Phase 4/5 artifacts, the live geospatial manifest, and the explicit serving approval gate are configured.
 
 ```bash
 cd ml
 python -m venv .venv
 # activate environment
 python -m pip install -r requirements-candidates.txt
-# configure the Phase 6 variables from .env.example in your shell
+# configure values from ml/.env.example in your shell
 python -m uvicorn service:app --host 127.0.0.1 --port 8000
 ```
 
-**2) Node backend** (needs MongoDB running on `mongodb://localhost:27017/`)
+For a reviewed real-artifact v1 activation candidate, run the Phase 7 preflight before routing farmer traffic:
+
+```bash
+python activate.py --lat 11.36 --lng 77.80 --activation-id boresakshi-v1-candidate --out activations/boresakshi-v1-candidate
+```
+
+The preflight writes a checksummed report with `productionActivated=false`; it does not deploy or auto-promote a model.
+
+**2) Node backend**
 
 ```bash
 cd server
@@ -63,21 +73,20 @@ npm install
 npm run dev      # http://localhost:5173
 ```
 
-Open `http://localhost:5173` and tap the map.
-
 ## Roadmap status
 
-- [x] Backend API + MongoDB + accountability ledger
-- [x] Farmer prediction screen (map, pin-drop, result card)
-- [x] Rig-operator logging screen (voice-optional, auto-GPS) — at `/log`
-- [x] Public accuracy-ledger view — at `/ledger`
-- [x] Landing page (`/welcome`) + operator accounts
-- [x] Operator dashboard/history + assigned sites
-- [x] Admin role + console
-- [x] Phase 2 real-data ingestion, provenance, review and quality gates
-- [x] Phase 3 real geospatial feature-engineering pipeline
-- [x] Phase 4 real-model candidate training/registry for success, water-strike depth and yield
-- [x] Phase 5 spatial scientific evaluation, calibration, uncertainty, confidence intervals, coverage and candidate selection
-- [x] Phase 6 Python ML service + Node orchestration/live inference with explicit approval/fallback controls
+- [x] Phase 2 — real-data ingestion, provenance, review and quality gates
+- [x] Phase 3 — real geospatial feature-engineering pipeline
+- [x] Phase 4 — real-model candidate training/registry
+- [x] Phase 5 — spatial scientific evaluation/calibration/uncertainty/selection
+- [x] Phase 6 — Python ML service + Node orchestration with explicit fallback controls
+- [x] Phase 7 — real prediction-engine contract, immutable feature snapshots and activation preflight
+- [ ] Phase 8 — production rig-operator data collection
+- [ ] Phase 9 — verification and data trust
+- [ ] Phase 10 — continuous learning with human-reviewed promotion
+- [ ] Phase 11 — strengthened prediction accountability ledger
+- [ ] Phase 15 — production security and reliability
+- [ ] Phase 17 — full testing
+- [ ] Phase 18 — deployment and DevOps
 
-Phase 6 software is implemented, but production serving is still operationally gated: `BORESAKSHI_PHASE6_APPROVED=YES` must be set only after the real-data Phase 5 promotion checklist is reviewed. Without that approval, `/ml/health` reports not-ready and the farmer API clearly labels its heuristic fallback.
+Phase 7 software makes the real prediction path activation-ready, but production farmer traffic must still use the reviewed real Phase 3/4/5 artifact chain. Synthetic CI artifacts verify implementation only; they are not production groundwater-performance evidence.
