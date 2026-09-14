@@ -1,8 +1,9 @@
-// predict.js — Phase 6 prediction orchestration.
+// predict.js — Phase 7 real prediction orchestration.
 // The public response contract remains compatible with the existing frontend.
 // Real inference is delegated to the Python ML service; the deterministic
-// heuristic exists only as an explicitly-labelled outage/coverage fallback.
+// heuristic exists only as an explicitly-labelled outage/coverage/contract fallback.
 import { mlClient as defaultMlClient } from "./mlClient.js";
+import { assertMlPredictionContract, PREDICTION_CONTRACT_VERSION } from "./predictionContract.js";
 
 export const NEAR_KM = 5;
 
@@ -90,6 +91,9 @@ export function predictHeuristic({ lat, lng, nearbyLogs = [], fallbackReason = n
     modelAvailable: false,
     modelVersion: null,
     featureVersion: null,
+    predictionContractVersion: PREDICTION_CONTRACT_VERSION,
+    featureSnapshotRef: null,
+    featureSnapshot: null,
     predictionTimestamp: new Date().toISOString(),
     coverageWarning: warning,
     fallbackReason: fallbackReason || "ML service unavailable",
@@ -106,10 +110,10 @@ export function predictHeuristic({ lat, lng, nearbyLogs = [], fallbackReason = n
 }
 
 function mapMlResponse(result, { lat, lng, nearbyLogs }) {
-  const depth = result.estimatedDepthFt || {};
-  const yieldRange = result.estimatedYieldLpm || {};
+  const depth = result.estimatedDepthFt;
+  const yieldRange = result.estimatedYieldLpm;
   const summary = result.nearbySummary || nearbySummary(lat, lng, nearbyLogs);
-  const factors = (result.explanations || []).map((item) => ({
+  const factors = result.explanations.map((item) => ({
     label: item.label || item.feature || "Model feature",
     impact: Number(item.impact || 0),
     method: item.method || "model_explanation",
@@ -118,7 +122,7 @@ function mapMlResponse(result, { lat, lng, nearbyLogs }) {
     successProbability: Math.round(Number(result.successProbability) * 10) / 10,
     depthBandFt: [Math.round(Number(depth.min)), Math.round(Number(depth.max))],
     expectedYieldLpm: [Math.round(Number(yieldRange.min)), Math.round(Number(yieldRange.max))],
-    confidence: result.confidence || "Low",
+    confidence: result.confidence,
     rockType: result.geologySummary || "Geospatial model context",
     basis: `Trained ML estimate using versioned terrain, hydrology, geology, climate, satellite and verified borewell features (${result.modelVersion}).`,
     isMock: false,
@@ -126,11 +130,14 @@ function mapMlResponse(result, { lat, lng, nearbyLogs }) {
     modelAvailable: true,
     modelVersion: result.modelVersion,
     featureVersion: result.featureVersion,
-    predictionTimestamp: result.predictionTimestamp || new Date().toISOString(),
-    coverageWarning: result.coverageWarning || null,
-    uncertainty: result.uncertainty || null,
-    featureCoverage: result.featureCoverage || null,
-    explanations: result.explanations || [],
+    predictionContractVersion: result.predictionContractVersion,
+    featureSnapshotRef: result.featureSnapshotRef,
+    featureSnapshot: result.featureSnapshot,
+    predictionTimestamp: result.predictionTimestamp,
+    coverageWarning: result.coverageWarning,
+    uncertainty: result.uncertainty,
+    featureCoverage: result.featureCoverage,
+    explanations: result.explanations,
     factors,
     confidenceReason: {
       nearbyCount: Number(summary.nearbyCount || 0),
@@ -138,7 +145,7 @@ function mapMlResponse(result, { lat, lng, nearbyLogs }) {
       failCount: Number(summary.failCount || 0),
       radiusKm: NEAR_KM,
       latestNearbyLogAt: summary.latestNearbyLogAt || null,
-      modelCoveragePct: result.featureCoverage?.coveragePct ?? null,
+      modelCoveragePct: result.featureCoverage.coveragePct,
       normalizedEntropy: result.uncertainty?.success?.normalizedEntropy ?? null,
     },
   };
@@ -164,6 +171,7 @@ export async function predictBorewell({ lat, lng, nearbyLogs = [], client = defa
         datasetEligibility: b.datasetEligibility || null,
       })),
     });
+    assertMlPredictionContract(result);
     return mapMlResponse(result, { lat, lng, nearbyLogs });
   } catch (error) {
     const reason = error?.code ? `${error.code}: ${error.message}` : error?.message || "ML service unavailable";
