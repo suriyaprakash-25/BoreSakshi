@@ -7,6 +7,7 @@ import cookieParser from "cookie-parser";
 import { nanoid } from "nanoid";
 import { db, connectDB, pingDB } from "./db.js";
 import { predictBorewell, distanceKm, NEAR_KM } from "./predict.js";
+import { mlClient } from "./mlClient.js";
 import { signup, signin, signout, requireAuth, requireAdmin } from "./auth.js";
 import {
   validate, signupSchema, signinSchema, predictSchema, borewellSchema,
@@ -50,10 +51,29 @@ const PORT = process.env.PORT || 4000;
 // NEAR_KM ("nearby" radius for confidence, ledger matching + explainability)
 // is defined once in predict.js and imported so both files can never drift.
 
-// health check — reports DB liveness; never hangs (5s server-selection timeout)
+// health check — the Node API remains available if ML is temporarily down; its
+// ML readiness/circuit state is reported explicitly instead of hiding the outage.
 app.get("/api/health", asyncHandler(async (_req, res) => {
   const dbUp = await pingDB();
-  res.status(dbUp ? 200 : 503).json({ ok: dbUp, service: "boresakshi", db: dbUp ? "up" : "down" });
+  let ml;
+  try {
+    const health = await mlClient.health({ timeoutMs: 750 });
+    ml = { ...health, client: mlClient.statusSnapshot() };
+  } catch (error) {
+    ml = {
+      ok: false,
+      ready: false,
+      errorCode: error?.code || "ML_UNAVAILABLE",
+      message: error?.message || "ML service unavailable",
+      client: mlClient.statusSnapshot(),
+    };
+  }
+  res.status(dbUp ? 200 : 503).json({
+    ok: dbUp,
+    service: "boresakshi",
+    db: dbUp ? "up" : "down",
+    ml,
+  });
 }));
 
 // ----------------------------------------------------------------------------
@@ -143,6 +163,8 @@ app.get("/api/assignments", requireAuth, asyncHandler(async (req, res) =>
 
 // ----------------------------------------------------------------------------
 // 2) PREDICT for a location (farmer drops a pin). Stored so we can score it later.
+// Phase 6: only verified, unflagged, dataset-eligible drill outcomes may influence
+// model or fallback evidence. The public response keeps the existing UI fields.
 // ----------------------------------------------------------------------------
 app.post("/api/predict", validate(predictSchema), asyncHandler(async (req, res) => {
   const { lat, lng, save: shouldSave = true } = req.body;
@@ -150,9 +172,10 @@ app.post("/api/predict", validate(predictSchema), asyncHandler(async (req, res) 
   const nearbyLogs = (await db.getBorewells())
     .map((b) => ({ ...b, distanceKm: distanceKm({ lat, lng }, b) }))
     .filter((b) => b.distanceKm <= NEAR_KM)
+    .filter((b) => b.verified === true && b.flagged !== true && b.datasetEligibility?.eligible !== false)
     .sort((a, b) => a.distanceKm - b.distanceKm);
 
-  const prediction = predictBorewell({ lat, lng, nearbyLogs });
+  const prediction = await predictBorewell({ lat, lng, nearbyLogs });
 
   let saved = null;
   if (shouldSave) {
