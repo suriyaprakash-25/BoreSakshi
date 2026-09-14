@@ -50,6 +50,8 @@ export const borewellSchema = z.object({
   yieldLpm: z.number().min(0).max(100000).nullable().optional(),
   success: z.boolean({ error: "success (true/false) is required" }),
   language: z.string().max(10).optional(),
+  gpsAccuracyM: z.number().min(0).max(100000).nullable().optional(),
+  drillingDate: z.string().datetime().optional(),
   // Optional explicit linkage: a field outcome may score only this prediction.
   // Nearby location alone is not enough to establish an accountable outcome.
   predictionId: z.string().min(1).max(40).optional(),
@@ -68,7 +70,13 @@ export const adminLogPatchSchema = z.object({
   flagged: z.boolean().optional(),
   flagReason: z.string().max(200).optional(),
   verified: z.boolean().optional(),
-}).refine((d) => d.flagged !== undefined || d.verified !== undefined, {
+  verificationStatus: z.enum(["UNDER_REVIEW", "VERIFIED", "REJECTED"]).optional(),
+  status: z.enum(["ACTIVE", "LOW_YIELD", "DRY", "ABANDONED", "RECHARGE_CANDIDATE", "RECHARGED"]).optional(),
+}).refine((d) =>
+  d.flagged !== undefined ||
+  d.verified !== undefined ||
+  d.verificationStatus !== undefined ||
+  d.status !== undefined, {
   message: "Nothing to update",
 });
 
