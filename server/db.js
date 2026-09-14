@@ -11,6 +11,7 @@ const DB_NAME = process.env.MONGODB_DB || "BoreSakshi";
 // the 30s default when Mongo is unreachable — they fail fast with a clear error.
 const client = new MongoClient(URI, { serverSelectionTimeoutMS: 5000 });
 let borewells, predictions, operators, assignments;
+let ingestionBatches, stagedBorewells, ingestionAudit, datasetAssets;
 
 // call once at server startup
 export async function connectDB() {
@@ -20,15 +21,40 @@ export async function connectDB() {
   predictions = database.collection("predictions");
   operators = database.collection("operators");
   assignments = database.collection("assignments");
+  ingestionBatches = database.collection("ingestion_batches");
+  stagedBorewells = database.collection("staged_borewells");
+  ingestionAudit = database.collection("ingestion_audit");
+  datasetAssets = database.collection("dataset_assets");
+
   // helpful indexes (id lookups + geo-ish range scans stay fast)
   await borewells.createIndex({ id: 1 }, { unique: true });
   await borewells.createIndex({ operatorId: 1 }); // operator dashboards/history
+  await borewells.createIndex({ location: "2dsphere" });
+  await borewells.createIndex({ ingestionFingerprint: 1 }, { sparse: true });
+  await borewells.createIndex({ drilledDate: 1 }, { sparse: true });
   await predictions.createIndex({ id: 1 }, { unique: true });
   await operators.createIndex({ id: 1 }, { unique: true });
   await operators.createIndex({ phone: 1 }, { unique: true }); // one account per phone
   await assignments.createIndex({ id: 1 }, { unique: true });
   await assignments.createIndex({ operatorId: 1 });
-  console.log(`MongoDB connected → ${DB_NAME} (collections: borewells, predictions, operators, assignments)`);
+
+  // Phase 2 staging/provenance/audit indexes.
+  await ingestionBatches.createIndex({ id: 1 }, { unique: true });
+  await ingestionBatches.createIndex({ createdAt: -1 });
+  await stagedBorewells.createIndex({ id: 1 }, { unique: true });
+  await stagedBorewells.createIndex({ batchId: 1, rowNumber: 1 });
+  await stagedBorewells.createIndex({ fingerprint: 1 });
+  await stagedBorewells.createIndex({ reviewStatus: 1 });
+  await stagedBorewells.createIndex({ location: "2dsphere" });
+  await ingestionAudit.createIndex({ id: 1 }, { unique: true });
+  await ingestionAudit.createIndex({ batchId: 1, createdAt: -1 });
+  await ingestionAudit.createIndex({ recordId: 1, createdAt: -1 }, { sparse: true });
+  await ingestionAudit.createIndex({ scopeType: 1, scopeId: 1, createdAt: -1 }, { sparse: true });
+  await datasetAssets.createIndex({ id: 1 }, { unique: true });
+  await datasetAssets.createIndex({ sha256: 1 }, { unique: true });
+  await datasetAssets.createIndex({ datasetKind: 1, createdAt: -1 });
+
+  console.log(`MongoDB connected → ${DB_NAME} (collections: borewells, predictions, operators, assignments, ingestion_batches, staged_borewells, ingestion_audit, dataset_assets)`);
 }
 
 // lightweight liveness check for the health route. Returns false (never throws)
@@ -152,5 +178,156 @@ export const db = {
     }));
     await assignments.insertMany(docs);
     return docs;
+  },
+
+  // --- Phase 2: real-data ingestion batches ---
+  async addIngestionBatch(batch) {
+    await ingestionBatches.insertOne({ ...batch });
+    return batch;
+  },
+  async getIngestionBatch(id) {
+    return ingestionBatches.findOne({ id }, NO_MONGO_ID);
+  },
+  async updateIngestionBatch(id, patch) {
+    return ingestionBatches.findOneAndUpdate(
+      { id }, { $set: patch }, { returnDocument: "after", projection: { _id: 0 } }
+    );
+  },
+  async listIngestionBatches({ page = 1, limit = 25 } = {}) {
+    const safePage = Math.max(1, Number(page) || 1);
+    const safeLimit = Math.min(100, Math.max(1, Number(limit) || 25));
+    const [items, total] = await Promise.all([
+      ingestionBatches.find({}, NO_MONGO_ID).sort({ createdAt: -1 }).skip((safePage - 1) * safeLimit).limit(safeLimit).toArray(),
+      ingestionBatches.countDocuments({}),
+    ]);
+    return { items, total, page: safePage, limit: safeLimit };
+  },
+
+  async addStagedBorewells(records) {
+    if (!records.length) return [];
+    await stagedBorewells.insertMany(records, { ordered: true });
+    return records;
+  },
+  async getStagedBorewell(id) {
+    return stagedBorewells.findOne({ id }, NO_MONGO_ID);
+  },
+  async updateStagedBorewell(id, patch) {
+    return stagedBorewells.findOneAndUpdate(
+      { id }, { $set: patch }, { returnDocument: "after", projection: { _id: 0 } }
+    );
+  },
+  async listStagedBorewells(batchId, { page = 1, limit = 50, status } = {}) {
+    const safePage = Math.max(1, Number(page) || 1);
+    const safeLimit = Math.min(200, Math.max(1, Number(limit) || 50));
+    const query = { batchId };
+    if (status) query.reviewStatus = status;
+    const [items, total] = await Promise.all([
+      stagedBorewells.find(query, NO_MONGO_ID).sort({ rowNumber: 1 }).skip((safePage - 1) * safeLimit).limit(safeLimit).toArray(),
+      stagedBorewells.countDocuments(query),
+    ]);
+    return { items, total, page: safePage, limit: safeLimit };
+  },
+  async getStagedBorewellsForBatch(batchId) {
+    return stagedBorewells.find({ batchId }, NO_MONGO_ID).sort({ rowNumber: 1 }).limit(5000).toArray();
+  },
+  async getPublishableStagedBorewells(batchId) {
+    return stagedBorewells.find(
+      { batchId, reviewStatus: "approved", datasetEligible: true, publishedAt: null },
+      NO_MONGO_ID
+    ).sort({ rowNumber: 1 }).limit(5000).toArray();
+  },
+  async summarizeStagedBatch(batchId) {
+    const rows = await stagedBorewells.aggregate([
+      { $match: { batchId } },
+      { $group: { _id: "$reviewStatus", count: { $sum: 1 } } },
+    ]).toArray();
+    const byStatus = Object.fromEntries(rows.map((r) => [r._id || "unknown", r.count]));
+    const published = await stagedBorewells.countDocuments({ batchId, publishedAt: { $ne: null } });
+    return { byStatus, published };
+  },
+
+  async findStagedDuplicate({ fingerprint, batchId = null }) {
+    const query = { fingerprint, reviewStatus: { $ne: "rejected" } };
+    if (batchId) query.batchId = { $ne: batchId };
+    return stagedBorewells.findOne(query, { projection: { _id: 0, id: 1, batchId: 1, rowNumber: 1 } });
+  },
+  async findCanonicalDuplicate({ fingerprint, location, drilledDate }) {
+    if (fingerprint) {
+      const exact = await borewells.findOne({ ingestionFingerprint: fingerprint }, { projection: { _id: 0, id: 1 } });
+      if (exact) return exact;
+    }
+    if (!location || !drilledDate) return null;
+    return borewells.findOne(
+      {
+        drilledDate,
+        location: {
+          $near: {
+            $geometry: location,
+            $maxDistance: 50,
+          },
+        },
+      },
+      { projection: { _id: 0, id: 1 } }
+    );
+  },
+
+  // Idempotent publish: repeated calls cannot duplicate canonical records.
+  async publishImportedBorewells(records) {
+    if (!records.length) return { upsertedCount: 0 };
+    const result = await borewells.bulkWrite(records.map((record) => ({
+      updateOne: {
+        filter: { id: record.id },
+        update: { $setOnInsert: record },
+        upsert: true,
+      },
+    })), { ordered: true });
+    return { upsertedCount: result.upsertedCount || 0 };
+  },
+  async markStagedPublished(ids, publishedAt) {
+    if (!ids.length) return;
+    await stagedBorewells.updateMany({ id: { $in: ids } }, { $set: { publishedAt } });
+  },
+
+  // External/raw feature dataset registry (satellite, rainfall, geology, soil, DEM, LULC, groundwater).
+  // Stores object-storage metadata only; the binary remains in the configured storage provider.
+  async addDatasetAsset(asset) {
+    await datasetAssets.insertOne({ ...asset });
+    return asset;
+  },
+  async getDatasetAsset(id) {
+    return datasetAssets.findOne({ id }, NO_MONGO_ID);
+  },
+  async getDatasetAssetBySha256(sha256) {
+    return datasetAssets.findOne({ sha256 }, NO_MONGO_ID);
+  },
+  async updateDatasetAsset(id, patch) {
+    return datasetAssets.findOneAndUpdate(
+      { id }, { $set: patch }, { returnDocument: "after", projection: { _id: 0 } }
+    );
+  },
+  async listDatasetAssets({ page = 1, limit = 25, datasetKind } = {}) {
+    const safePage = Math.max(1, Number(page) || 1);
+    const safeLimit = Math.min(100, Math.max(1, Number(limit) || 25));
+    const query = {};
+    if (datasetKind) query.datasetKind = datasetKind;
+    const [items, total] = await Promise.all([
+      datasetAssets.find(query, NO_MONGO_ID).sort({ createdAt: -1 }).skip((safePage - 1) * safeLimit).limit(safeLimit).toArray(),
+      datasetAssets.countDocuments(query),
+    ]);
+    return { items, total, page: safePage, limit: safeLimit };
+  },
+
+  // Append-only audit trail: deliberately no update/delete method is exposed.
+  async addIngestionAudit(event) {
+    await ingestionAudit.insertOne({ ...event });
+    return event;
+  },
+  async getIngestionAudit(batchId, { limit = 200 } = {}) {
+    const safeLimit = Math.min(500, Math.max(1, Number(limit) || 200));
+    return ingestionAudit.find({ batchId }, NO_MONGO_ID).sort({ createdAt: -1 }).limit(safeLimit).toArray();
+  },
+  async getIngestionAuditByScope(scopeType, scopeId, { limit = 200 } = {}) {
+    const safeLimit = Math.min(500, Math.max(1, Number(limit) || 200));
+    return ingestionAudit.find({ scopeType, scopeId }, NO_MONGO_ID).sort({ createdAt: -1 }).limit(safeLimit).toArray();
   },
 };
