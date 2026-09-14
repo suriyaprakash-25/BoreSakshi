@@ -5,6 +5,7 @@ const report = [];
 let authCookie = "";
 let predictionId = "";
 let csrfToken = "";
+let borewellId = "";
 
 async function fetchAPI(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
@@ -155,10 +156,27 @@ async function main() {
     });
     assert(res.status === 201, `Expected 201, got ${res.status}`);
     assert(res.data.id !== undefined, "Missing borewell ID in response");
+    borewellId = res.data.id;
     assert(/^BW-[A-Z0-9_-]+$/.test(res.data.publicId), "Missing public borewell ID");
     assert(res.data.status === "ACTIVE", "Expected ACTIVE borewell status");
     assert(res.data.verificationStatus === "SUBMITTED", "Expected submitted verification status");
     assert(res.data.scoredPredictions === 1, "Explicitly linked prediction was not scored");
+  });
+
+  await runTest("POST /api/borewells/:id/observations", async () => {
+    const res = await fetchAPI(`/borewells/${borewellId}/observations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "WATER_LEVEL", waterLevelFt: 42, note: "Follow-up measurement" }),
+    });
+    assert(res.status === 201, `Expected 201, got ${res.status}`);
+    assert(res.data.type === "WATER_LEVEL", "Observation type was not saved");
+  });
+
+  await runTest("GET /api/borewells/:id/observations", async () => {
+    const res = await fetchAPI(`/borewells/${borewellId}/observations`);
+    assert(res.status === 200, `Expected 200, got ${res.status}`);
+    assert(res.data.length >= 2, "Expected drilling and follow-up observations");
   });
 
   // 8. Admin Protected Routes (Should fail with 403 since we are a normal operator)
