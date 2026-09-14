@@ -7,18 +7,20 @@ const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), 
   headers: { "Content-Type": "application/json" },
 });
 
-test("ML client retries retryable 5xx then succeeds", async () => {
+test("health probe does not retry", async () => {
   let calls = 0;
   const client = new MlServiceClient({
     fetchImpl: async () => {
       calls += 1;
-      return calls === 1 ? jsonResponse({ detail: { code: "TEMP", message: "temporary" } }, 503) : jsonResponse({ ok: true });
+      return jsonResponse({ detail: { code: "TEMP", message: "temporary" } }, 503);
     },
-    retries: 1,
+    retries: 2,
     timeoutMs: 100,
   });
-  const result = await client.health({ timeoutMs: 100 });
-  assert.equal(result.ok, true);
+  await assert.rejects(() => client.health({ timeoutMs: 100 }), (error) => {
+    assert.equal(error.code, "TEMP");
+    return true;
+  });
   assert.equal(calls, 1, "health explicitly disables retries");
 });
 
