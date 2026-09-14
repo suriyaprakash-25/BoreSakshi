@@ -159,6 +159,19 @@ class ServingBundle:
         except StopIteration as exc:
             raise ServingBundleError(f"selected {task} candidate is missing from Phase 5 report") from exc
 
+    def _resolve_evaluation_artifact(self, task: str, metadata: dict[str, Any]) -> Path:
+        raw_path = str(metadata.get("path") or "")
+        direct = self.phase5_evaluation_dir / raw_path
+        if direct.exists():
+            return direct
+        # Phase 5 v1 interval metadata used the basename while writing the file
+        # under selected/<task>/. Keep serving backward-compatible with that
+        # checksummed artifact contract rather than mutating historical reports.
+        fallback = self.phase5_evaluation_dir / "selected" / task / raw_path
+        if fallback.exists():
+            return fallback
+        return direct
+
     def _load_task(self, task: str) -> LoadedTask:
         task_eval = self.evaluation.get("tasks", {}).get(task) or {}
         selection = task_eval.get("selection") or {}
@@ -176,13 +189,13 @@ class ServingBundle:
         if task == "success":
             calibration = selected_aux.get("calibration") or {}
             artifact = calibration.get("artifact") or {}
-            path = self.phase5_evaluation_dir / str(artifact.get("path") or "")
+            path = self._resolve_evaluation_artifact(task, artifact)
             _verify_artifact(path, artifact)
             auxiliary = {"calibration": calibration, "calibrator": joblib.load(path)}
         else:
             uncertainty = selected_aux.get("uncertainty") or {}
             artifact = uncertainty.get("artifact") or {}
-            path = self.phase5_evaluation_dir / str(artifact.get("path") or "")
+            path = self._resolve_evaluation_artifact(task, artifact)
             _verify_artifact(path, artifact)
             interval = json.loads(path.read_text(encoding="utf-8"))
             auxiliary = {"uncertainty": uncertainty, "interval": interval}
