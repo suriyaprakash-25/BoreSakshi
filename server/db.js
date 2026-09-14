@@ -10,7 +10,7 @@ const DB_NAME = process.env.MONGODB_DB || "BoreSakshi";
 // serverSelectionTimeoutMS keeps calls (incl. the health check) from hanging for
 // the 30s default when Mongo is unreachable — they fail fast with a clear error.
 const client = new MongoClient(URI, { serverSelectionTimeoutMS: 5000 });
-let borewells, borewellObservations, predictions, operators, assignments;
+let borewells, borewellObservations, predictions, operators, assignments, importBatches;
 
 // call once at server startup
 export async function connectDB() {
@@ -21,6 +21,7 @@ export async function connectDB() {
   predictions = database.collection("predictions");
   operators = database.collection("operators");
   assignments = database.collection("assignments");
+  importBatches = database.collection("importBatches");
   // helpful indexes (id lookups + geo-ish range scans stay fast)
   await borewells.createIndex({ id: 1 }, { unique: true });
   await borewells.createIndex({ operatorId: 1 }); // operator dashboards/history
@@ -32,6 +33,8 @@ export async function connectDB() {
   await operators.createIndex({ phone: 1 }, { unique: true }); // one account per phone
   await assignments.createIndex({ id: 1 }, { unique: true });
   await assignments.createIndex({ operatorId: 1 });
+  await importBatches.createIndex({ id: 1 }, { unique: true });
+  await importBatches.createIndex({ createdAt: -1 });
   console.log(`MongoDB connected → ${DB_NAME} (collections: borewells, predictions, operators, assignments)`);
 }
 
@@ -122,6 +125,23 @@ export const db = {
   },
   async updatePrediction(id, patch) {
     const result = await predictions.findOneAndUpdate(
+      { id },
+      { $set: patch },
+      { returnDocument: "after", projection: { _id: 0 } }
+    );
+    return result || null;
+  },
+
+  // --- import batches (reviewable data-ingestion ledger) ---
+  async addImportBatch(batch) {
+    await importBatches.insertOne({ ...batch });
+    return batch;
+  },
+  async getImportBatchById(id) {
+    return importBatches.findOne({ id }, NO_MONGO_ID);
+  },
+  async updateImportBatch(id, patch) {
+    const result = await importBatches.findOneAndUpdate(
       { id },
       { $set: patch },
       { returnDocument: "after", projection: { _id: 0 } }
