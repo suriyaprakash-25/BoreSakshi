@@ -257,7 +257,7 @@ test("Phase 17 E2E: register -> login -> prediction -> rig upload -> verify -> l
   assert.equal(scoredLedger.payload.totalPredictions, 1);
   assert.equal(scoredLedger.payload.scored, 1);
   assert.ok(scoredLedger.payload.brier != null);
-  assert.equal(scoredLedger.payload.recent[0].id, prediction.payload.predictionId);
+  assert.equal(scoredLedger.payload.recent[0].predictionId, prediction.payload.predictionId);
 
   const reopen = await request(baseUrl, `/api/admin/review/logs/${borewellId}/reopen`, {
     method: "POST",
