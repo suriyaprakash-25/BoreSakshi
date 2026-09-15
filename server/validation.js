@@ -50,6 +50,27 @@ export const borewellSchema = z.object({
   yieldLpm: z.number().min(0).max(100000).nullable().optional(),
   success: z.boolean({ error: "success (true/false) is required" }),
   language: z.string().max(10).optional(),
+  gpsAccuracyM: z.number().min(0).max(100000).nullable().optional(),
+  drillingDate: z.string().datetime().optional(),
+  // Optional explicit linkage: a field outcome may score only this prediction.
+  // Nearby location alone is not enough to establish an accountable outcome.
+  predictionId: z.string().min(1).max(40).optional(),
+});
+
+export const importBorewellCsvSchema = z.object({
+  csvText: z.string().min(1, "CSV data is required").max(1_000_000, "CSV is too large (maximum 1 MB)"),
+  dryRun: z.boolean().optional().default(true),
+});
+
+export const observationSchema = z.object({
+  type: z.enum(["WATER_LEVEL", "YIELD", "MAINTENANCE"]),
+  observedAt: z.string().datetime().optional(),
+  waterLevelFt: z.number().min(0).max(5000).nullable().optional(),
+  yieldLpm: z.number().min(0).max(100000).nullable().optional(),
+  note: z.string().max(500).optional(),
+}).refine((d) =>
+  d.waterLevelFt != null || d.yieldLpm != null || Boolean(d.note?.trim()), {
+  message: "Provide a water level, yield, or observation note",
 });
 
 // admin can change an operator's status and verified flag — never role.
@@ -65,7 +86,13 @@ export const adminLogPatchSchema = z.object({
   flagged: z.boolean().optional(),
   flagReason: z.string().max(200).optional(),
   verified: z.boolean().optional(),
-}).refine((d) => d.flagged !== undefined || d.verified !== undefined, {
+  verificationStatus: z.enum(["UNDER_REVIEW", "VERIFIED", "REJECTED"]).optional(),
+  status: z.enum(["ACTIVE", "LOW_YIELD", "DRY", "ABANDONED", "RECHARGE_CANDIDATE", "RECHARGED"]).optional(),
+}).refine((d) =>
+  d.flagged !== undefined ||
+  d.verified !== undefined ||
+  d.verificationStatus !== undefined ||
+  d.status !== undefined, {
   message: "Nothing to update",
 });
 

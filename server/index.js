@@ -7,19 +7,20 @@ import cookieParser from "cookie-parser";
 import { nanoid } from "nanoid";
 import { db, connectDB, pingDB } from "./db.js";
 import { predictBorewell, distanceKm, NEAR_KM } from "./predict.js";
-import { signup, signin, signout, requireAuth, requireAdmin } from "./auth.js";
+import { signup, signin, signout, requireAuth, requireAdmin, requireCsrf } from "./auth.js";
 import {
-  validate, signupSchema, signinSchema, predictSchema, borewellSchema,
+  validate, signupSchema, signinSchema, predictSchema, borewellSchema, observationSchema,
   adminOperatorPatchSchema, adminLogPatchSchema,
 } from "./validation.js";
 import {
-  asyncHandler, authLimiter, signinBruteLimiter, notFound, errorHandler,
+  asyncHandler, authLimiter, signinBruteLimiter, predictLimiter, notFound, errorHandler,
 } from "./middleware.js";
 
 const app = express();
 app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:5173",
-  credentials: true
+  credentials: true,
+  allowedHeaders: ["Content-Type", "X-CSRF-Token"],
 }));
 app.use(cookieParser());
 app.use(express.json({ limit: "10kb" })); // reject oversized payloads (→ 413)
@@ -31,6 +32,14 @@ app.use(morgan("dev")); // request logging
 if (process.env.TRUST_PROXY) app.set("trust proxy", Number(process.env.TRUST_PROXY));
 
 const PORT = process.env.PORT || 4000;
+
+// Public borewell discovery is intentionally approximate: the map still works
+// while avoiding publication of a farmer's exact drilling location or operator identity.
+const toPublicBorewell = ({ operatorId, operatorName, createdBy, verifiedBy, lat, lng, ...record }) => ({
+  ...record,
+  lat: Math.round(lat * 100) / 100,
+  lng: Math.round(lng * 100) / 100,
+});
 // NEAR_KM ("nearby" radius for confidence, ledger matching + explainability)
 // is defined once in predict.js and imported so both files can never drift.
 
@@ -51,33 +60,78 @@ app.post(
   signinBruteLimiter,          // then count failed attempts per phone number
   asyncHandler(signin)
 );
-app.post("/api/auth/signout", asyncHandler(signout));
+app.post("/api/auth/signout", requireAuth, requireCsrf, asyncHandler(signout));
+// The client restores its UI state from the HTTP-only cookie; it never needs to
+// persist a token or profile in browser storage.
+app.get("/api/auth/session", requireAuth, asyncHandler(async (req, res) => {
+  res.json({ operator: req.operator, csrfToken: req.csrfToken });
+}));
 
 // ----------------------------------------------------------------------------
-// 1) LOG A BOREWELL (rig operator submits a completed job = verified outcome)
+// 1) LOG A BOREWELL (rig operator submits a completed job for admin review)
 // ----------------------------------------------------------------------------
-app.post("/api/borewells", requireAuth, validate(borewellSchema), asyncHandler(async (req, res) => {
-  const { lat, lng, placeName, depthFt, strata, waterStrikeFt, yieldLpm, success, language } = req.body;
+app.post("/api/borewells", requireAuth, requireCsrf, validate(borewellSchema), asyncHandler(async (req, res) => {
+  const {
+    lat, lng, placeName, depthFt, strata, waterStrikeFt, yieldLpm, success, language,
+    gpsAccuracyM, drillingDate, predictionId,
+  } = req.body;
+
+  // Validate a requested accountability link before storing the field record so
+  // a bad link cannot leave a partially accepted borewell submission behind.
+  let linkedPrediction = null;
+  if (predictionId) {
+    linkedPrediction = await db.getPredictionById(predictionId);
+    if (!linkedPrediction) return res.status(404).json({ error: "Prediction not found" });
+    if (linkedPrediction.actual != null) return res.status(409).json({ error: "Prediction already has an outcome" });
+    if (distanceKm({ lat, lng }, { lat: linkedPrediction.lat, lng: linkedPrediction.lng }) > NEAR_KM) {
+      return res.status(400).json({ error: `Outcome must be within ${NEAR_KM} km of the linked prediction` });
+    }
+  }
+
+  const createdAt = new Date().toISOString();
+  const observedAt = drillingDate || createdAt;
+  const status = success ? "ACTIVE" : "DRY";
   const record = {
     id: nanoid(10),
+    publicId: "BW-" + nanoid(10).toUpperCase(),
     lat, lng,
+    gpsAccuracyM: gpsAccuracyM ?? null,
     placeName: placeName?.trim() || "",
+    drillingDate: observedAt,
     depthFt: depthFt ?? null,
     strata: strata ?? "",
+    geology: strata ?? "",
     waterStrikeFt: waterStrikeFt ?? null,
     yieldLpm: yieldLpm ?? null,
     success,
+    status,
     // identity comes from the signed-in operator, not free-text client input
     operatorId: req.operator.id,
     operatorName: req.operator.name,
+    createdBy: req.operator.id,
     language: language ?? "ta",
-    // admin moderation fields — start clean, changed only via admin routes
+    // Moderation is separate from borewell status. The legacy verified field
+    // remains for existing clients and old records during this migration.
+    verificationStatus: "SUBMITTED",
     flagged: false,
     flagReason: "",
     verified: false,
-    createdAt: new Date().toISOString(),
+    createdAt,
   };
-  await db.addBorewell(record);
+  const drillingObservation = {
+    id: nanoid(10),
+    borewellId: record.id,
+    type: "DRILLING",
+    observedAt,
+    depthFt: record.depthFt,
+    waterStrikeFt: record.waterStrikeFt,
+    yieldLpm: record.yieldLpm,
+    status: record.status,
+    geology: record.geology,
+    createdBy: req.operator.id,
+    createdAt,
+  };
+  await db.addBorewellWithObservation(record, drillingObservation);
 
   // WORK QUEUE: if this log lands near one of the operator's still-pending
   // assigned sites, close that assignment out.
@@ -85,32 +139,77 @@ app.post("/api/borewells", requireAuth, validate(borewellSchema), asyncHandler(a
   const near = pending.find((a) => distanceKm({ lat, lng }, { lat: a.lat, lng: a.lng }) <= 2);
   if (near) await db.updateAssignment(near.id, { status: "logged", loggedBorewellId: record.id, loggedAt: record.createdAt });
 
-  // ACCOUNTABILITY LOOP: if this outcome sits near an earlier prediction that
-  // is still open, close it out by scoring predicted-vs-actual.
-  const openPreds = (await db.getPredictions()).filter((p) => p.actual == null);
+  // ACCOUNTABILITY LOOP: location proximity is not enough to link an outcome to
+  // a request. Score at most the explicit prediction selected by the operator.
   let scoredPredictions = 0;
-  for (const p of openPreds) {
-    if (distanceKm({ lat, lng }, { lat: p.lat, lng: p.lng }) <= NEAR_KM) {
-      const predictedSuccess = p.successProbability >= 50;
-      await db.updatePrediction(p.id, {
-        actual: { success: record.success, depthFt: record.depthFt, borewellId: record.id, closedAt: record.createdAt },
-        correct: predictedSuccess === record.success,
-      });
-      scoredPredictions++;
-    }
+  if (linkedPrediction) {
+    const predictedSuccess = linkedPrediction.successProbability >= 50;
+    await db.updatePrediction(linkedPrediction.id, {
+      actual: { success: record.success, depthFt: record.depthFt, borewellId: record.id, closedAt: record.createdAt },
+      correct: predictedSuccess === record.success,
+    });
+    scoredPredictions = 1;
   }
 
-  // scoredPredictions = how many open predictions this real outcome just closed
-  // out on the accountability ledger (0 if none were pending nearby).
+  // An outcome with no explicit prediction remains valuable verified field data,
+  // but cannot be used to claim prediction accuracy.
   res.status(201).json({ ...record, scoredPredictions });
 }));
 
-app.get("/api/borewells", asyncHandler(async (_req, res) => res.json(await db.getBorewells())));
+app.get("/api/borewells", asyncHandler(async (_req, res) => {
+  const logs = await db.getPredictionEligibleBorewells();
+  res.json(logs.map(toPublicBorewell));
+}));
 
 // this operator's own logs (newest first) — powers their dashboard + history
 app.get("/api/borewells/mine", requireAuth, asyncHandler(async (req, res) =>
   res.json(await db.getBorewellsByOperator(req.operator.id))
 ));
+
+// Observations are private operational data. An operator may access only their
+// own borewells; admins may access any record for verification and oversight.
+async function getAccessibleBorewell(req, res) {
+  const borewell = await db.getBorewellById(req.params.id);
+  if (!borewell) {
+    res.status(404).json({ error: "Borewell not found" });
+    return null;
+  }
+  if (req.operator.role !== "admin" && borewell.operatorId !== req.operator.id) {
+    res.status(403).json({ error: "You do not have access to this borewell" });
+    return null;
+  }
+  return borewell;
+}
+
+app.get("/api/borewells/:id/observations", requireAuth, asyncHandler(async (req, res) => {
+  const borewell = await getAccessibleBorewell(req, res);
+  if (!borewell) return;
+  res.json(await db.getObservationsByBorewellId(borewell.id));
+}));
+
+app.post(
+  "/api/borewells/:id/observations",
+  requireAuth,
+  requireCsrf,
+  validate(observationSchema),
+  asyncHandler(async (req, res) => {
+    const borewell = await getAccessibleBorewell(req, res);
+    if (!borewell) return;
+    const observation = {
+      id: nanoid(10),
+      borewellId: borewell.id,
+      type: req.body.type,
+      observedAt: req.body.observedAt || new Date().toISOString(),
+      waterLevelFt: req.body.waterLevelFt ?? null,
+      yieldLpm: req.body.yieldLpm ?? null,
+      note: req.body.note?.trim() || "",
+      createdBy: req.operator.id,
+      createdAt: new Date().toISOString(),
+    };
+    await db.addObservation(observation);
+    res.status(201).json(observation);
+  })
+);
 
 // this operator's assigned sites still awaiting a log
 app.get("/api/assignments", requireAuth, asyncHandler(async (req, res) =>
@@ -120,14 +219,14 @@ app.get("/api/assignments", requireAuth, asyncHandler(async (req, res) =>
 // ----------------------------------------------------------------------------
 // 2) PREDICT for a location (farmer drops a pin). Stored so we can score it later.
 // ----------------------------------------------------------------------------
-app.post("/api/predict", validate(predictSchema), asyncHandler(async (req, res) => {
+app.post("/api/predict", predictLimiter, validate(predictSchema), asyncHandler(async (req, res) => {
   const { lat, lng, save: shouldSave = true } = req.body;
 
-  // The real verified drill logs within NEAR_KM — the SAME data that drives the
+  // Admin-verified, non-flagged drill logs within NEAR_KM — the same data that drives the
   // prediction, its `factors`, and its confidence. Annotated with distance and
   // sorted nearest-first so the frontend "nearby wells" explorer can show the
   // exact evidence behind the number.
-  const nearbyLogs = (await db.getBorewells())
+  const nearbyLogs = (await db.getPredictionEligibleBorewells())
     .map((b) => ({ ...b, distanceKm: distanceKm({ lat, lng }, b) }))
     .filter((b) => b.distanceKm <= NEAR_KM)
     .sort((a, b) => a.distanceKm - b.distanceKm);
@@ -176,7 +275,7 @@ app.get("/api/ledger", asyncHandler(async (_req, res) => {
     correct,
     accuracyPct: accuracy,
     recent: closed.slice(-10).reverse().map((p) => ({
-      id: p.id, lat: p.lat, lng: p.lng,
+      id: p.id, lat: Math.round(p.lat * 100) / 100, lng: Math.round(p.lng * 100) / 100,
       predictedSuccessPct: p.successProbability,
       actualSuccess: p.actual.success,
       correct: p.correct,
@@ -187,20 +286,21 @@ app.get("/api/ledger", asyncHandler(async (_req, res) => {
 // ----------------------------------------------------------------------------
 // 4) ADMIN — platform oversight. Every route requires an admin account.
 // ----------------------------------------------------------------------------
-const admin = [requireAuth, requireAdmin];
+const adminRead = [requireAuth, requireAdmin];
+const adminWrite = [requireAuth, requireAdmin, requireCsrf];
 
 // all operator accounts (no password hashes)
-app.get("/api/admin/operators", ...admin, asyncHandler(async (_req, res) =>
+app.get("/api/admin/operators", ...adminRead, asyncHandler(async (_req, res) =>
   res.json(await db.getOperators())
 ));
 
 // every log across all operators (includes flag/verify moderation fields)
-app.get("/api/admin/logs", ...admin, asyncHandler(async (_req, res) =>
+app.get("/api/admin/logs", ...adminRead, asyncHandler(async (_req, res) =>
   res.json(await db.getAllBorewells())
 ));
 
 // deactivate/reactivate or verify an operator (never role — no in-app role mgmt)
-app.patch("/api/admin/operators/:id", ...admin, validate(adminOperatorPatchSchema), asyncHandler(async (req, res) => {
+app.patch("/api/admin/operators/:id", ...adminWrite, validate(adminOperatorPatchSchema), asyncHandler(async (req, res) => {
   const updated = await db.updateOperator(req.params.id, req.body);
   if (!updated) return res.status(404).json({ error: "Operator not found" });
   const { passwordHash, ...safe } = updated; // belt-and-braces
@@ -208,8 +308,21 @@ app.patch("/api/admin/operators/:id", ...admin, validate(adminOperatorPatchSchem
 }));
 
 // flag/unflag or verify an individual log
-app.patch("/api/admin/logs/:id", ...admin, validate(adminLogPatchSchema), asyncHandler(async (req, res) => {
+app.patch("/api/admin/logs/:id", ...adminWrite, validate(adminLogPatchSchema), asyncHandler(async (req, res) => {
   const patch = { ...req.body };
+  // Keep the legacy boolean and the explicit verification lifecycle coherent
+  // while existing clients and records are migrated incrementally.
+  if (patch.verified === true || patch.verificationStatus === "VERIFIED") {
+    patch.verified = true;
+    patch.verificationStatus = "VERIFIED";
+    patch.verifiedAt = new Date().toISOString();
+    patch.verifiedBy = req.operator.id;
+  } else if (patch.verified === false && patch.verificationStatus === undefined) {
+    patch.verificationStatus = "UNDER_REVIEW";
+  } else if (patch.verificationStatus && patch.verificationStatus !== "VERIFIED") {
+    patch.verified = false;
+  }
+
   if (patch.flagged === true) {
     patch.flagReason = (req.body.flagReason || "").trim();
     patch.flaggedAt = new Date().toISOString();

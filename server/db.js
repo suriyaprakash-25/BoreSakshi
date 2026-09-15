@@ -10,24 +10,31 @@ const DB_NAME = process.env.MONGODB_DB || "BoreSakshi";
 // serverSelectionTimeoutMS keeps calls (incl. the health check) from hanging for
 // the 30s default when Mongo is unreachable — they fail fast with a clear error.
 const client = new MongoClient(URI, { serverSelectionTimeoutMS: 5000 });
-let borewells, predictions, operators, assignments;
+let borewells, borewellObservations, predictions, operators, assignments, importBatches;
 
 // call once at server startup
 export async function connectDB() {
   await client.connect();
   const database = client.db(DB_NAME);
   borewells = database.collection("borewells");
+  borewellObservations = database.collection("borewellObservations");
   predictions = database.collection("predictions");
   operators = database.collection("operators");
   assignments = database.collection("assignments");
+  importBatches = database.collection("importBatches");
   // helpful indexes (id lookups + geo-ish range scans stay fast)
   await borewells.createIndex({ id: 1 }, { unique: true });
   await borewells.createIndex({ operatorId: 1 }); // operator dashboards/history
+  await borewells.createIndex({ publicId: 1 }, { unique: true, sparse: true });
+  await borewellObservations.createIndex({ id: 1 }, { unique: true });
+  await borewellObservations.createIndex({ borewellId: 1, observedAt: -1 });
   await predictions.createIndex({ id: 1 }, { unique: true });
   await operators.createIndex({ id: 1 }, { unique: true });
   await operators.createIndex({ phone: 1 }, { unique: true }); // one account per phone
   await assignments.createIndex({ id: 1 }, { unique: true });
   await assignments.createIndex({ operatorId: 1 });
+  await importBatches.createIndex({ id: 1 }, { unique: true });
+  await importBatches.createIndex({ createdAt: -1 });
   console.log(`MongoDB connected → ${DB_NAME} (collections: borewells, predictions, operators, assignments)`);
 }
 
@@ -51,8 +58,35 @@ export const db = {
     await borewells.insertOne({ ...record });
     return record;
   },
+  // A borewell is the long-lived asset; observations are time-stamped facts
+  // about it. The compensating delete keeps this two-collection write atomic
+  // enough for the current standalone MongoDB deployment.
+  async addBorewellWithObservation(record, observation) {
+    await borewells.insertOne({ ...record });
+    try {
+      await borewellObservations.insertOne({ ...observation });
+    } catch (err) {
+      await borewells.deleteOne({ id: record.id });
+      throw err;
+    }
+    return record;
+  },
   async getBorewells() {
     return borewells.find({}, NO_MONGO_ID).limit(5000).toArray();
+  },
+  async getBorewellById(id) {
+    return borewells.findOne({ id }, NO_MONGO_ID);
+  },
+  // Only moderated records may influence a prediction. This keeps unreviewed or
+  // flagged operator submissions out of decision-support outputs.
+  async getPredictionEligibleBorewells() {
+    return borewells.find(
+      {
+        flagged: { $ne: true },
+        $or: [{ verified: true }, { verificationStatus: "VERIFIED" }],
+      },
+      NO_MONGO_ID
+    ).limit(5000).toArray();
   },
   // admin: every log, newest first (flag/verify fields included)
   async getAllBorewells() {
@@ -70,6 +104,13 @@ export const db = {
   async getBorewellsByOperator(operatorId) {
     return borewells.find({ operatorId }, NO_MONGO_ID).sort({ createdAt: -1 }).limit(5000).toArray();
   },
+  async getObservationsByBorewellId(borewellId) {
+    return borewellObservations.find({ borewellId }, NO_MONGO_ID).sort({ observedAt: -1 }).limit(5000).toArray();
+  },
+  async addObservation(observation) {
+    await borewellObservations.insertOne({ ...observation });
+    return observation;
+  },
 
   // --- predictions we issued (for the accountability ledger) ---
   async addPrediction(record) {
@@ -79,8 +120,28 @@ export const db = {
   async getPredictions() {
     return predictions.find({}, NO_MONGO_ID).limit(5000).toArray();
   },
+  async getPredictionById(id) {
+    return predictions.findOne({ id }, NO_MONGO_ID);
+  },
   async updatePrediction(id, patch) {
     const result = await predictions.findOneAndUpdate(
+      { id },
+      { $set: patch },
+      { returnDocument: "after", projection: { _id: 0 } }
+    );
+    return result || null;
+  },
+
+  // --- import batches (reviewable data-ingestion ledger) ---
+  async addImportBatch(batch) {
+    await importBatches.insertOne({ ...batch });
+    return batch;
+  },
+  async getImportBatchById(id) {
+    return importBatches.findOne({ id }, NO_MONGO_ID);
+  },
+  async updateImportBatch(id, patch) {
+    const result = await importBatches.findOneAndUpdate(
       { id },
       { $set: patch },
       { returnDocument: "after", projection: { _id: 0 } }
