@@ -2,10 +2,10 @@ export const ACCOUNTABILITY_SCHEMA_VERSION = "11.0.0";
 export const SUCCESS_THRESHOLD_PCT = 50;
 export const CALIBRATION_BIN_COUNT = 10;
 
-const finite = (value) => Number.isFinite(Number(value));
+const finite = (value) => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
 const numberOrNull = (value) => finite(value) ? Number(value) : null;
 const round = (value, digits = 2) => {
-  if (!Number.isFinite(Number(value))) return null;
+  if (!finite(value)) return null;
   const power = 10 ** digits;
   return Math.round(Number(value) * power) / power;
 };
