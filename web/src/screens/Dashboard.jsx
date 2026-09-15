@@ -11,7 +11,7 @@ import { useAuth } from "../auth.jsx";
 import { useOperatorData } from "../operatorData.jsx";
 import {
   successRate, averageDepth, logsThisWeek, logsPerMonth, strataBreakdown,
-  trustScore, trustedOutcomeLogs, placeLabel, fmtDate,
+  trustedOutcomeLogs, placeLabel, fmtDate,
 } from "../metrics.js";
 
 function greeting() {
@@ -19,12 +19,16 @@ function greeting() {
   return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 }
 
+function trustLabel(tier) {
+  return ({ NEW: "New", BUILDING: "Building", TRUSTED: "Trusted", HIGH_TRUST: "High trust", WATCH: "Watch" })[tier] || "New";
+}
+
 export default function Dashboard() {
   const { operator } = useAuth();
-  const { logs, assignments, loading } = useOperatorData();
+  const { logs, assignments, trust, loading } = useOperatorData();
   const navigate = useNavigate();
 
-  const trust = trustScore(logs, { verified: operator?.verified });
+  const serverTrust = trust || { score: 50, tier: "NEW", reviewedCount: 0, confidencePct: 0, explanation: "Waiting for server trust profile." };
   const verifiedLogs = trustedOutcomeLogs(logs);
   const rate = successRate(logs);
   const avg = averageDepth(logs);
@@ -53,11 +57,14 @@ export default function Dashboard() {
             <section className="dash-top">
               <div className="card dash-trust">
                 <div className="dash-trust-head">
-                  <span className="dash-card-title">Field contribution score</span>
-                  <span className="dash-trust-badge">{trust.label}</span>
+                  <span className="dash-card-title">Verified-data trust</span>
+                  <span className="dash-trust-badge">{trustLabel(serverTrust.tier)}</span>
                 </div>
-                <ProbabilityRing value={trust.score} size={148} suffix="" label={trust.label} />
-                <p className="dash-trust-note">Legacy contribution indicator based on logging activity. Phase 9 owns the production trust-score model.</p>
+                <ProbabilityRing value={serverTrust.score} size={148} suffix="" label={trustLabel(serverTrust.tier)} />
+                <p className="dash-trust-note">
+                  Server-computed Phase 9 trust · {serverTrust.reviewedCount} reviewed record{serverTrust.reviewedCount === 1 ? "" : "s"} · {serverTrust.confidencePct}% confidence.
+                  {" "}{serverTrust.explanation}
+                </p>
               </div>
 
               <div className="dash-stats">
@@ -122,14 +129,14 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <ul className="dash-activity">
-                  {recent.map((l) => (
-                    <li key={l.id}>
-                      <span className={`act-dot ${l.success ? "ok" : "dry"}`}>
-                        {l.success ? <Droplets size={14} strokeWidth={2.2} /> : <DropletOff size={14} strokeWidth={2.2} />}
+                  {recent.map((log) => (
+                    <li key={log.id}>
+                      <span className={`act-dot ${log.success ? "ok" : "dry"}`}>
+                        {log.success ? <Droplets size={14} strokeWidth={2.2} /> : <DropletOff size={14} strokeWidth={2.2} />}
                       </span>
-                      <span className="act-place">{placeLabel(l)}</span>
-                      <span className="act-meta">{l.verified ? "Verified" : "Pending"} · {l.depthFt ? `${l.depthFt} ft` : "—"}</span>
-                      <span className="act-date">{fmtDate(l.createdAt)}</span>
+                      <span className="act-place">{placeLabel(log)}</span>
+                      <span className="act-meta">{log.verificationStatus || (log.verified ? "VERIFIED" : "SUBMITTED")} · {log.depthFt ? `${log.depthFt} ft` : "—"}</span>
+                      <span className="act-date">{fmtDate(log.createdAt)}</span>
                     </li>
                   ))}
                 </ul>
