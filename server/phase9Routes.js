@@ -169,8 +169,8 @@ export function createPhase9Router({
       const allRecords = await db.getAllBorewells();
       const existing = recordById(allRecords, req.params.id);
       if (!existing || !isOperatorSubmission(existing)) return res.status(404).json({ error: "Operator submission not found" });
-      if (!canTransition(existing.verificationStatus, VERIFICATION_STATUSES.UNDER_REVIEW)) {
-        return res.status(409).json({ error: `Cannot start review from ${existing.verificationStatus || "unknown"}` });
+      if (existing.verificationStatus !== VERIFICATION_STATUSES.SUBMITTED) {
+        return res.status(409).json({ error: `Review start is only valid from SUBMITTED; use reopen for ${existing.verificationStatus || "unknown"}` });
       }
       const now = new Date().toISOString();
       const analysis = analysisFor(existing, allRecords);
@@ -180,15 +180,6 @@ export function createPhase9Router({
         reviewNote: req.body.note || "",
       };
       const updated = await db.updateBorewell(existing.id, patch);
-      if (existing.ledgerScoredAt) {
-        const reopened = await reopenPredictionsForRecord(db, existing.id);
-        await db.updateBorewell(existing.id, {
-          ledgerScoredAt: null,
-          ledgerScoredPredictions: 0,
-          ledgerReopenedAt: now,
-          ledgerReopenedPredictions: reopened,
-        });
-      }
       await audit(db, {
         record: existing,
         action: "verification_review_started",
@@ -312,8 +303,8 @@ export function createPhase9Router({
       const allRecords = await db.getAllBorewells();
       const existing = recordById(allRecords, req.params.id);
       if (!existing || !isOperatorSubmission(existing)) return res.status(404).json({ error: "Operator submission not found" });
-      if (!canTransition(existing.verificationStatus, VERIFICATION_STATUSES.UNDER_REVIEW)) {
-        return res.status(409).json({ error: `Cannot reopen review from ${existing.verificationStatus || "unknown"}` });
+      if (![VERIFICATION_STATUSES.VERIFIED, VERIFICATION_STATUSES.REJECTED].includes(existing.verificationStatus)) {
+        return res.status(409).json({ error: `Review reopen is only valid from VERIFIED or REJECTED, not ${existing.verificationStatus || "unknown"}` });
       }
       const now = new Date().toISOString();
       const analysis = analysisFor(existing, allRecords);
