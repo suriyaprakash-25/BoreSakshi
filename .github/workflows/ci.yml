@@ -11,89 +11,63 @@ permissions:
 
 jobs:
   server:
-    name: Server tests
+    name: Server regression
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    services:
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' localhost:27017/test"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
+    timeout-minutes: 15
     env:
-      MONGODB_URI: mongodb://localhost:27017/
-      MONGODB_DB: BoreSakshi_ci
-      JWT_SECRET: ci-only-not-a-production-secret
+      JWT_SECRET: ci-only-jwt-secret-at-least-32-characters-long
+      RIG_EVIDENCE_SECRET: ci-only-evidence-secret-distinct-and-long-enough
       NODE_ENV: test
       FRONTEND_URL: http://localhost:5173
-
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: "22"
           cache: npm
           cache-dependency-path: server/package-lock.json
-
       - name: Install server dependencies
         working-directory: server
         run: npm ci
-
-      - name: Check server syntax
-        working-directory: server
-        run: npm run check:syntax
-
-      - name: Run deterministic predictor contract tests
-        working-directory: server
-        run: npm run test:predict
-
-      - name: Start API and run integration tests
-        working-directory: server
-        shell: bash
+      - name: Check final server syntax
         run: |
-          npm start > "$RUNNER_TEMP/boresakshi-api.log" 2>&1 &
-          API_PID=$!
-          trap 'kill "$API_PID" 2>/dev/null || true; cat "$RUNNER_TEMP/boresakshi-api.log"' EXIT
-
-          for attempt in {1..30}; do
-            if curl --silent --fail http://localhost:4000/api/health > /dev/null; then
-              npm run test:api
-              exit 0
-            fi
-            sleep 1
-          done
-
-          echo "API did not become healthy"
-          exit 1
+          node --check server/index.js
+          node --check server/auth.js
+          node --check server/phase8Routes.js
+          node --check server/phase9Routes.js
+          node --check server/phase11Routes.js
+          node --check server/phase15Routes.js
+          node --check server/production.js
+          node --check server/productionConfig.js
+      - name: Run complete backend regression suite
+        working-directory: server
+        run: npm run test:phase17
+      - name: Audit production server dependencies
+        working-directory: server
+        run: npm audit --omit=dev --audit-level=high
 
   web:
-    name: Web build
+    name: Web regression and build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
+    timeout-minutes: 15
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
-
       - name: Install web dependencies
         working-directory: web
         run: npm ci
-
+      - name: Run frontend regression suite
+        working-directory: web
+        run: npm run test:phase17
       - name: Build production web bundle
         working-directory: web
+        env:
+          VITE_API_URL: ""
         run: npm run build
+      - name: Audit production web dependencies
+        working-directory: web
+        run: npm audit --omit=dev --audit-level=high
