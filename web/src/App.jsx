@@ -8,6 +8,7 @@ import OperatorLog from "./screens/OperatorLog.jsx";
 import LedgerScreen from "./screens/LedgerScreen.jsx";
 import LandingScreen from "./screens/LandingScreen.jsx";
 import AuthScreen from "./screens/AuthScreen.jsx";
+import ResetPasswordScreen from "./screens/ResetPasswordScreen.jsx";
 import Dashboard from "./screens/Dashboard.jsx";
 import History from "./screens/History.jsx";
 import AdminDashboard from "./screens/admin/AdminDashboard.jsx";
@@ -44,6 +45,7 @@ export default function App() {
                 <Route path="/ledger" element={<LedgerScreen />} />
                 <Route path="/signin" element={<AuthScreen mode="signin" />} />
                 <Route path="/signup" element={<AuthScreen mode="signup" />} />
+                <Route path="/reset-password" element={<ResetPasswordScreen />} />
 
                 <Route path="/dashboard" element={<RequireOperator><Dashboard /></RequireOperator>} />
                 <Route path="/log" element={<RequireOperator><OperatorLog /></RequireOperator>} />

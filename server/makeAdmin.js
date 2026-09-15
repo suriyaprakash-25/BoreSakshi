@@ -1,7 +1,8 @@
-// makeAdmin.js — CLI script to promote an existing operator to admin.
+// makeAdmin.js — reviewed CLI promotion for an existing operator account.
 // Usage: node makeAdmin.js <phone_number>
 import "dotenv/config";
 import { connectDB, db } from "./db.js";
+import { authStore } from "./authStore.js";
 
 async function main() {
   const phoneArg = process.argv[2];
@@ -9,8 +10,6 @@ async function main() {
     console.error("Usage: node makeAdmin.js <phone_number>");
     process.exit(1);
   }
-
-  // normalise phone to match the logic in auth.js
   const cleanPhone = String(phoneArg).replace(/[^\d]/g, "");
 
   try {
@@ -21,20 +20,23 @@ async function main() {
       process.exit(1);
     }
 
-    if (operator.role === "admin") {
-      console.log(`Operator ${operator.name} is already an admin.`);
+    const alreadyReady = operator.role === "admin" && operator.verified === true;
+    if (alreadyReady) {
+      console.log(`Operator ${operator.name} is already a verified admin.`);
       process.exit(0);
     }
 
-    const updated = await db.updateOperator(operator.id, { role: "admin" });
-    if (updated) {
-      console.log(`Successfully promoted ${operator.name} (${cleanPhone}) to admin.`);
-    } else {
-      console.error(`Failed to update operator role.`);
-      process.exit(1);
-    }
+    const updated = await db.updateOperator(operator.id, {
+      role: "admin",
+      verified: true,
+      adminPromotedAt: new Date().toISOString(),
+      sessionVersion: Number(operator.sessionVersion || 0) + 1,
+    });
+    if (!updated) throw new Error("Failed to update operator role");
+    const revoked = await authStore.revokeAllForOperator(operator.id, "admin_role_changed");
+    console.log(`Successfully promoted and verified ${operator.name} (${cleanPhone}) as admin. Revoked ${revoked} older session(s); sign in again.`);
   } catch (err) {
-    console.error("Error:", err);
+    console.error("Error:", err.message || err);
     process.exit(1);
   }
   process.exit(0);

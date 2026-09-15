@@ -5,13 +5,20 @@ import { z } from "zod";
 import { SOURCE_TYPES, DATASET_KINDS } from "./ingestion.js";
 
 const password = z.string()
-  .min(8, "Password must be at least 8 characters")
+  .min(10, "Password must be at least 10 characters")
   .max(128)
   .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
   .regex(/[a-z]/, "Password must contain at least one lowercase letter")
   .regex(/[0-9]/, "Password must contain at least one number")
   .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character");
 const phone = z.string().min(1, "Phone is required").max(20);
+const recoveryCode = z.string().trim().toUpperCase().regex(/^BSK-[A-Z2-9]{5}(?:-[A-Z2-9]{5}){3}$/, "Recovery code format is invalid");
+
+const matchingPasswordConfirmation = (data, ctx) => {
+  if (data.confirmPassword != null && data.newPassword !== data.confirmPassword) {
+    ctx.addIssue({ code: "custom", path: ["confirmPassword"], message: "Passwords do not match" });
+  }
+};
 
 // lat/lng: must be real numbers in range. z.number() rejects non-numbers, and the
 // range checks reject NaN/±Infinity, so malformed coordinates never reach a handler.
@@ -20,11 +27,12 @@ const lng = z.number().min(-180, "lng must be between -180 and 180").max(180, "l
 
 export const signupSchema = z
   .object({
-    name: z.string().min(1, "Name is required").max(80),
+    name: z.string().trim().min(1, "Name is required").max(80),
     phone,
     password,
     confirmPassword: z.string().max(128).optional(),
   })
+  .strict()
   .refine((d) => d.confirmPassword == null || d.password === d.confirmPassword, {
     message: "Passwords do not match",
     path: ["confirmPassword"],
@@ -33,7 +41,24 @@ export const signupSchema = z
 export const signinSchema = z.object({
   phone,
   password: z.string().min(1, "Password is required").max(128),
-});
+}).strict();
+
+export const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: password,
+  confirmPassword: z.string().max(128).optional(),
+}).strict().superRefine(matchingPasswordConfirmation);
+
+export const passwordResetSchema = z.object({
+  phone,
+  recoveryCode,
+  newPassword: password,
+  confirmPassword: z.string().max(128).optional(),
+}).strict().superRefine(matchingPasswordConfirmation);
+
+export const recoveryRotateSchema = z.object({
+  currentPassword: z.string().min(1).max(128),
+}).strict();
 
 export const predictSchema = z.object({
   lat,
@@ -81,7 +106,7 @@ export const borewellSchema = z.object({
     if (!(data.waterStrikeFt > 0)) {
       ctx.addIssue({ code: "custom", path: ["waterStrikeFt"], message: "Water-strike depth is required when water is found" });
     } else if (data.waterStrikeFt > data.depthFt) {
-      ctx.addIssue({ code: "custom", path: ["waterStrikeFt"], message: "Water-strike depth cannot exceed total depth" });
+      ctx.addIssue({ code: "custom", path: ["waterStrikeFt"], message: "Water-strike depth cannot exceed total drilled depth" });
     }
     if (!(data.yieldLpm > 0)) {
       ctx.addIssue({ code: "custom", path: ["yieldLpm"], message: "Yield is required when water is found" });
@@ -110,16 +135,14 @@ export const borewellSchema = z.object({
   });
 });
 
-// admin can change an operator's status and verified flag — never role.
 export const adminOperatorPatchSchema = z.object({
   status: z.enum(["active", "deactivated"]).optional(),
   verified: z.boolean().optional(),
-}).refine((d) => d.status !== undefined || d.verified !== undefined, {
+  reason: z.string().trim().min(10, "Admin changes require a reason of at least 10 characters").max(500),
+}).strict().refine((d) => d.status !== undefined || d.verified !== undefined, {
   message: "Nothing to update",
 });
 
-// Phase 8 keeps the existing simple admin verification toggle for compatibility.
-// Phase 9 will expand this into the full SUBMITTED→UNDER_REVIEW→VERIFIED/REJECTED lifecycle.
 export const adminLogPatchSchema = z.object({
   flagged: z.boolean().optional(),
   flagReason: z.string().max(200).optional(),
@@ -128,7 +151,6 @@ export const adminLogPatchSchema = z.object({
   message: "Nothing to update",
 });
 
-// Phase 2 ingestion provenance travels in query parameters for text/csv uploads.
 export const ingestionSourceSchema = z.object({
   sourceType: z.enum(SOURCE_TYPES),
   sourceName: z.string().trim().min(1, "sourceName is required").max(120),
@@ -161,8 +183,6 @@ export const datasetAssetReviewSchema = z.object({
   reviewNote: z.string().trim().max(500).optional().default(""),
 });
 
-// middleware factory: validate req.body against a schema, replacing it with the
-// parsed/sanitised result. Returns the first human-readable message on failure.
 export const validate = (schema) => (req, res, next) => {
   const result = schema.safeParse(req.body ?? {});
   if (!result.success) {

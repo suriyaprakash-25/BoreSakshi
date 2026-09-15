@@ -38,7 +38,7 @@ Every accepted ML prediction carries a model version, feature version, predictio
 ## Rig-operator verification path
 
 ```text
-Authenticated operator
+Authenticated + verified operator account
    ↓
 Device GPS + accuracy + drilling date
    ↓
@@ -58,7 +58,7 @@ Only VERIFIED + unflagged + eligible outcomes become
 public data / ML evidence / future training / ledger truth
 ```
 
-Phase 8 provides structured evidence-backed field collection. Phase 9 provides the formal human verification lifecycle, deterministic suspicious-data review, append-only review audit and server-computed operator trust profile.
+Phase 8 provides structured evidence-backed field collection. Phase 9 provides the formal human verification lifecycle, deterministic suspicious-data review, append-only review audit and server-computed operator trust profile. Phase 15 additionally requires the operator account itself to be verified before it can upload field evidence or submit a drilling record.
 
 The Phase 9 trust/risk scores are operational review aids, not groundwater-model probabilities and not substitutes for Phase 5 scientific ML validation.
 
@@ -112,6 +112,24 @@ Phase 10 monitoring input
 
 Phase 11 preserves real ML model versions separately from `heuristic_fallback`. If outcome trust is later reopened or removed, that outcome is removed from current performance metrics and the reopening is retained in append-only accountability history.
 
+## Production security and reliability
+
+Phase 15 adds application-level production controls without replacing the existing Phase 2–11 flows:
+
+- revocable server-side sessions beneath signed JWT identity;
+- `HttpOnly`, `Secure`-in-production, `SameSite=Strict` session cookies;
+- one-time hashed recovery codes, password reset/change and session revocation;
+- verified-admin and verified-field-operator authorization gates;
+- same-origin unsafe-write protection, HTTPS checks and security headers;
+- request IDs, safe error handling and expanded rate limits;
+- public borewell privacy projection;
+- append-only `security_event` audit records;
+- liveness/readiness and protected low-cardinality Prometheus metrics;
+- AES-256-GCM encrypted/checksummed Mongo backups and guarded restore;
+- high-severity production dependency-audit gates for server and web.
+
+Phase 15 hardens the application. Phase 18 still owns deployment infrastructure such as TLS termination, managed secrets, durable private evidence storage, scheduled off-host backups, centralized monitoring/alerts and disaster-recovery operations.
+
 ## Run locally
 
 **1) Python ML service**
@@ -151,16 +169,26 @@ When `BORESAKSHI_DEPLOYMENT_MANIFEST` points to a checksummed ACTIVE Phase 10 de
 ```bash
 cd server
 npm install
-# copy server/.env.example to .env and configure JWT/RIG evidence secrets
+# copy server/.env.example to .env and configure secrets/origin/security values
 node seed.js     # optional demo logs
 npm start        # http://localhost:4000
+```
+
+Phase 15 operational checks and backup commands:
+
+```bash
+npm run test:phase15
+npm run security:audit
+npm run backup:create
+npm run backup:verify -- <backup-directory>
+npm run backup:restore -- <backup-directory>   # dry-run by default
 ```
 
 Phase 8 evidence is stored under `RIG_MEDIA_DIR`. Production deployment must use durable/private storage; the local default is for development and application-contract validation.
 
 Verification review is available to admins at `/admin/review`. Rig operators see their server-computed Phase 9 trust profile on the dashboard and can request re-review for rejected submissions from History.
 
-The public `/ledger` page now reports persisted prediction counts, classification accuracy, Brier/calibration, water-strike/yield error, model-version performance and regional performance. `GET /api/ledger`, `/api/ledger/entries`, `/api/ledger/models` and `/api/ledger/regions` expose the same additive accountability contract.
+The public `/ledger` page reports persisted prediction counts, classification accuracy, Brier/calibration, water-strike/yield error, model-version performance and regional performance. `GET /api/ledger`, `/api/ledger/entries`, `/api/ledger/models` and `/api/ledger/regions` expose the same additive accountability contract.
 
 **3) Web**
 
@@ -169,6 +197,8 @@ cd web
 npm install
 npm run dev      # http://localhost:5173
 ```
+
+Signup displays a recovery code once. Save it securely; only its hash is stored by the backend. The reset flow is available at `/reset-password`.
 
 ## Roadmap status
 
@@ -182,8 +212,8 @@ npm run dev      # http://localhost:5173
 - [x] Phase 9 — formal verification lifecycle + suspicious-data review + operator/data trust + append-only audit
 - [x] Phase 10 — adaptive retraining + production comparison + human approval + staged activation + rollback controls
 - [x] Phase 11 — model-version prediction accountability, calibration, depth/yield error and regional performance
-- [ ] Phase 15 — production security and reliability
+- [x] Phase 15 — production application security, privacy, sessions, recovery, audits, backups and monitoring
 - [ ] Phase 17 — full testing
 - [ ] Phase 18 — deployment and DevOps
 
-Phase 10 consumes only Phase 9-trusted data and never automatically replaces production. Phase 11 supplies model-version-scoped post-deployment evidence to Phase 10 monitoring but never auto-retrains or auto-rolls back a model. Phase 15 must remediate dependency/security findings before launch; Phase 18 must provide durable evidence storage, backups and production deployment infrastructure.
+Phase 10 consumes only Phase 9-trusted data and never automatically replaces production. Phase 11 supplies model-version-scoped post-deployment evidence to Phase 10 monitoring but never auto-retrains or auto-rolls back a model. Phase 15 closes the application-level security/reliability gate; Phase 17 owns the full-system test matrix and Phase 18 owns durable production deployment and operations.

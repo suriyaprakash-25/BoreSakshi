@@ -1,56 +1,120 @@
 // middleware.js — cross-cutting API middleware: async error capture, rate
-// limiting (express-rate-limit v8, in-memory, no external service), a JSON 404,
-// and a central error handler that always returns clean JSON (never hangs).
+// limiting, clean JSON errors, and production-safe error handling.
 import rateLimit from "express-rate-limit";
+import {
+  createCsrfOriginGuard,
+  enforceProductionHttps,
+  requestId,
+  securityHeaders,
+} from "./security.js";
 
-// wrap async handlers so a rejected promise reaches the error handler instead of
-// hanging the request (Express 4 doesn't catch async throws on its own).
 export const asyncHandler = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
-const msg = (m) => ({ error: m });
+const msg = (m, code = "RATE_LIMITED") => ({ error: m, code });
 
-// IP-based throttle for all auth traffic (signup + signin).
-export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 min
-  limit: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: msg("Too many attempts from this device. Please wait a few minutes and try again."),
-});
-
-// Per-phone brute-force guard: lock a number out after 5 FAILED sign-ins in the
-// window. Successful sign-ins don't count (skipSuccessfulRequests), so a normal
-// user is never affected. Keyed by phone digits, so it's independent of IP.
-const digits = (p) => String(p || "").replace(/[^\d]/g, "");
-export const signinBruteLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, // 10 min lockout window
-  limit: 5,
-  skipSuccessfulRequests: true,
-  keyGenerator: (req) => digits(req.body?.phone) || "unknown",
-  validate: { keyGeneratorIpFallback: false }, // intentional: we key by phone, not IP
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: msg("Too many failed sign-in attempts for this number. Please wait ~10 minutes and try again."),
-});
-
-// unknown route → clean JSON 404
-export function notFound(_req, res) {
-  res.status(404).json({ error: "Not found" });
+function chain(...middlewares) {
+  return (req, res, next) => {
+    let index = 0;
+    const run = (error) => {
+      if (error) return next(error);
+      if (res.headersSent || index >= middlewares.length) return index >= middlewares.length ? next() : undefined;
+      const middleware = middlewares[index++];
+      return middleware(req, res, run);
+    };
+    return run();
+  };
 }
 
-// central error handler (must keep 4 args). Turns any thrown error — bad JSON,
-// oversized body, DB failure — into a clean JSON response and logs it server-side.
-export function errorHandler(err, _req, res, _next) {
-  if (res.headersSent) return; // response already streaming; let Express close it
+export const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.API_RATE_LIMIT || 600),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: msg("Too many requests. Please wait and try again."),
+});
+
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.AUTH_RATE_LIMIT || 30),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: msg("Too many authentication attempts from this device. Please wait and try again."),
+});
+
+// index.js already mounts `authLimiter` on signup/signin before the Phase 8+
+// stacked router. Keep that call site unchanged, but make the middleware itself
+// enforce Phase 15 request IDs, headers, HTTPS and same-origin write protection.
+export const authLimiter = chain(
+  requestId,
+  securityHeaders,
+  enforceProductionHttps,
+  createCsrfOriginGuard(),
+  authRateLimiter,
+);
+
+const digits = (p) => String(p || "").replace(/[^\d]/g, "");
+export const signinBruteLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: Number(process.env.SIGNIN_FAILURE_LIMIT || 5),
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => digits(req.body?.phone) || "unknown",
+  validate: { keyGeneratorIpFallback: false },
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: msg("Too many failed sign-in attempts for this number. Please wait before trying again.", "SIGNIN_LOCKED"),
+});
+
+export const passwordResetLimiter = rateLimit({
+  windowMs: 30 * 60 * 1000,
+  limit: Number(process.env.PASSWORD_RESET_LIMIT || 5),
+  keyGenerator: (req) => digits(req.body?.phone) || req.ip || "unknown",
+  validate: { keyGeneratorIpFallback: false },
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: msg("Too many password recovery attempts. Please wait before trying again.", "PASSWORD_RESET_LOCKED"),
+});
+
+export const predictLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: Number(process.env.PREDICT_RATE_LIMIT || 60),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: msg("Prediction request limit reached. Please wait a few minutes."),
+});
+
+export const adminLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: Number(process.env.ADMIN_RATE_LIMIT || 180),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: msg("Admin request limit reached. Please wait and retry."),
+});
+
+export function notFound(req, res) {
+  res.status(404).json({ error: "Not found", requestId: req.id || null });
+}
+
+export function errorHandler(err, req, res, _next) {
+  if (res.headersSent) return;
 
   if (err?.type === "entity.too.large") {
-    return res.status(413).json({ error: "Request body too large" });
+    return res.status(413).json({ error: "Request body too large", requestId: req.id || null });
   }
   if (err?.type === "entity.parse.failed" || err instanceof SyntaxError) {
-    return res.status(400).json({ error: "Malformed JSON in request body" });
+    return res.status(400).json({ error: "Malformed JSON in request body", requestId: req.id || null });
+  }
+  if (err?.code === "CORS_ORIGIN_DENIED") {
+    return res.status(403).json({ error: "Origin is not allowed", code: err.code, requestId: req.id || null });
   }
 
-  console.error("[BoreSakshi] Unhandled API error:", err);
-  res.status(500).json({ error: "Something went wrong. Please try again." });
+  console.error("[BoreSakshi] Unhandled API error", {
+    requestId: req.id || null,
+    method: req.method,
+    path: req.path,
+    name: err?.name,
+    code: err?.code,
+    message: err?.message,
+  });
+  res.status(500).json({ error: "Something went wrong. Please try again.", requestId: req.id || null });
 }

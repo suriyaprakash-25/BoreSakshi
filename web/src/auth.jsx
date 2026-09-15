@@ -1,18 +1,27 @@
-// auth.jsx — operator session context. Backed by localStorage (see api.js).
-// Farmers never hit this; only the /log flow reads it.
+// auth.jsx — operator session context. The browser stores only the safe operator
+// profile; authentication itself is the HttpOnly server session cookie.
 import { createContext, useContext, useState, useCallback } from "react";
 import { getAuth, setAuth as persist, clearAuth, signout as apiSignout } from "./api.js";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [auth, setAuthState] = useState(getAuth); // { token, operator } | null
+  const [auth, setAuthState] = useState(getAuth);
 
-  const signIn = useCallback((data) => { persist(data); setAuthState(data); }, []);
-  const signOut = useCallback(() => { apiSignout(); clearAuth(); setAuthState(null); }, []);
+  const signIn = useCallback((data) => {
+    const safe = data?.operator ? { operator: data.operator } : null;
+    if (safe) persist(safe);
+    else clearAuth();
+    setAuthState(safe);
+  }, []);
+
+  const signOut = useCallback(() => {
+    apiSignout();
+    clearAuth();
+    setAuthState(null);
+  }, []);
 
   const value = {
-    token: auth?.token || null,
     operator: auth?.operator || null,
     signIn,
     signOut,

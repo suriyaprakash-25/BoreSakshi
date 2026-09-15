@@ -68,6 +68,51 @@ export async function signout() {
   }).catch(() => {});
 }
 
+export async function resetPassword({ phone, recoveryCode, newPassword, confirmPassword }) {
+  const res = await fetch(`${API}/api/auth/password/reset`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ phone, recoveryCode, newPassword, confirmPassword }),
+  });
+  if (!res.ok) throw await readError(res, "Could not reset password");
+  return res.json();
+}
+
+export async function changePassword({ currentPassword, newPassword, confirmPassword }) {
+  const res = await fetch(`${API}/api/auth/password/change`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
+  });
+  if (!res.ok) throw await readError(res, "Could not change password");
+  return res.json();
+}
+
+export async function rotateRecoveryCode(currentPassword) {
+  const res = await fetch(`${API}/api/auth/recovery/rotate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ currentPassword }),
+  });
+  if (!res.ok) throw await readError(res, "Could not rotate recovery code");
+  return res.json();
+}
+
+export async function getSessions() {
+  const res = await fetch(`${API}/api/auth/sessions`, { credentials: "include" });
+  if (!res.ok) throw await readError(res, "Could not load sessions");
+  return res.json();
+}
+
+export async function revokeOtherSessions() {
+  const res = await fetch(`${API}/api/auth/sessions/revoke-others`, { method: "POST", credentials: "include" });
+  if (!res.ok) throw await readError(res, "Could not revoke other sessions");
+  return res.json();
+}
+
 export async function uploadRigEvidence(file) {
   const res = await fetch(`${API}/api/operator/evidence`, {
     method: "POST",
@@ -149,13 +194,38 @@ export async function adminGetLogs() {
 }
 
 export async function adminPatchOperator(id, patch) {
+  const reason = patch.reason || (
+    patch.status ? `Admin changed operator account status to ${patch.status} from the oversight console.`
+      : `Admin changed operator verification to ${patch.verified ? "verified" : "unverified"} from the oversight console.`
+  );
   const res = await fetch(`${API}/api/admin/operators/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify(patch),
+    body: JSON.stringify({ ...patch, reason }),
   });
   if (!res.ok) throw await readError(res, "Could not update operator");
+  return res.json();
+}
+
+export async function adminRotateRecoveryCode(id) {
+  const res = await fetch(`${API}/api/admin/operators/${encodeURIComponent(id)}/recovery/rotate`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw await readError(res, "Could not issue a recovery code");
+  return res.json();
+}
+
+export async function adminSecurityStatus() {
+  const res = await fetch(`${API}/api/admin/security/status`, { credentials: "include" });
+  if (!res.ok) throw await readError(res, "Could not load security status");
+  return res.json();
+}
+
+export async function adminGetSecurityAudit(id) {
+  const res = await fetch(`${API}/api/admin/security/operators/${encodeURIComponent(id)}/audit`, { credentials: "include" });
+  if (!res.ok) throw await readError(res, "Could not load security audit");
   return res.json();
 }
 
