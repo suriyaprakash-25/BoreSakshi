@@ -5,10 +5,15 @@ import { validateSecurityConfiguration } from "./security.js";
 
 const LOCAL_MONGO = /(^|\/\/)(localhost|127\.0\.0\.1)(:|\/|$)/i;
 const RELEASE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const PLACEHOLDER_RE = /(change[_ -]?me|replace[_ -]?with|example(?:\.org|\.com|\.invalid)?|your[-_ ]|todo|changethis)/i;
 
 function positiveInt(value, fallback) {
   const parsed = Number(value ?? fallback);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function rejectPlaceholder(errors, name, value) {
+  if (value && PLACEHOLDER_RE.test(String(value))) errors.push(`${name} still contains a placeholder value`);
 }
 
 export function validateProductionDeploymentEnv(env = process.env) {
@@ -38,9 +43,6 @@ export function validateProductionDeploymentEnv(env = process.env) {
     if (env.REQUIRE_ML_READY !== "YES") {
       errors.push("REQUIRE_ML_READY=YES is required for a production-ready BoreSakshi deployment");
     }
-    if (env.LOG_FORMAT !== "json") {
-      errors.push("LOG_FORMAT=json is required in production for centralized log ingestion");
-    }
 
     const media = String(env.RIG_MEDIA_DIR || "");
     const backups = String(env.BACKUP_DIR || "");
@@ -48,6 +50,17 @@ export function validateProductionDeploymentEnv(env = process.env) {
     if (!path.isAbsolute(backups)) errors.push("BACKUP_DIR must be an absolute durable-volume path in production");
     if (env.RIG_MEDIA_DURABLE !== "YES") errors.push("RIG_MEDIA_DURABLE=YES is required after mounting durable private evidence storage");
     if (env.OFFSITE_BACKUP_CONFIGURED !== "YES") errors.push("OFFSITE_BACKUP_CONFIGURED=YES is required after configuring scheduled off-host backups");
+    if (env.CENTRAL_LOGGING_CONFIGURED !== "YES") errors.push("CENTRAL_LOGGING_CONFIGURED=YES is required after centralized log shipping is active");
+    if (env.ALERT_DELIVERY_CONFIGURED !== "YES") errors.push("ALERT_DELIVERY_CONFIGURED=YES is required after a real alert receiver has been tested");
+
+    for (const [name, value] of Object.entries({
+      MONGODB_URI: env.MONGODB_URI,
+      FRONTEND_URL: env.FRONTEND_URL,
+      JWT_SECRET: env.JWT_SECRET,
+      RIG_EVIDENCE_SECRET: env.RIG_EVIDENCE_SECRET,
+      MONITORING_TOKEN: env.MONITORING_TOKEN,
+      BACKUP_ENCRYPTION_KEY_BASE64: env.BACKUP_ENCRYPTION_KEY_BASE64,
+    })) rejectPlaceholder(errors, name, value);
   }
 
   const shutdownMs = positiveInt(env.GRACEFUL_SHUTDOWN_MS, 15000);
