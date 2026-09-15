@@ -1,0 +1,11 @@
+[Unit]
+Description=Run BoreSakshi off-site backup daily
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+Persistent=true
+RandomizedDelaySec=900
+Unit=boresakshi-backup.service
+
+[Install]
+WantedBy=timers.target
