@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { predictSchema } from "./validation.js";
 import { predictBorewell, distanceKm, NEAR_KM } from "./predict.js";
 import { isTrustedOutcome } from "./rigData.js";
+import { createPhase15Router } from "./phase15Routes.js";
 import {
   ACCOUNTABILITY_SCHEMA_VERSION,
   buildPredictionAccountability,
@@ -46,6 +47,11 @@ export function createPhase11Router({
   predictor = predictBorewell,
 }) {
   const router = express.Router();
+
+  // Phase 15 is additive and intentionally mounted ahead of the Phase 11 routes.
+  // Its global middleware continues with next(), while privacy/security endpoints
+  // can intercept the small set of routes they explicitly strengthen.
+  router.use(createPhase15Router({ db, requireAuth, requireAdmin, validate }));
 
   // Authoritative prediction route for Phase 11. It preserves the existing public
   // response while snapshotting every persisted prediction into the accountability
@@ -123,8 +129,6 @@ export function createPhase11Router({
         .slice(0, 20)
         .map((prediction) => safeLedgerEntry(prediction));
 
-      // Keep the original top-level fields intact while adding the Phase 11 research
-      // metrics and grouped performance views.
       res.json({
         schemaVersion: ACCOUNTABILITY_SCHEMA_VERSION,
         generatedAt: summary.generatedAt,
