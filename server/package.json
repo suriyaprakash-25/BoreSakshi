@@ -1,13 +1,13 @@
 {
   "name": "boresakshi-server",
   "version": "1.0.0",
-  "description": "BoreSakshi backend — borewell logging, review-gated ML prediction and accountability ledger",
+  "description": "BoreSakshi backend \u2014 borewell logging, review-gated ML prediction and accountability ledger",
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "start:production": "node scripts/production-preflight.js --startup && node production.js",
-    "dev": "node --watch index.js",
+    "start": "node init && node index.js",
+    "start:production": "node init && node scripts/production-preflight.js --startup && node production.js",
+    "dev": "node init && node --watch index.js",
     "test": "node --test",
     "test:all": "node --test --test-concurrency=1",
     "test:phase2": "node --test test/ingestion.test.js",
