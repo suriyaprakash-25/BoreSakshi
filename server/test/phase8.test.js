@@ -147,11 +147,12 @@ test("public Phase 8 borewell endpoint exposes trusted outcomes only", async () 
   }
 });
 
-test("ledger closes only after verification and reopens when trust is removed", async () => {
+test("Phase 9 descendant blocks the former direct operator verification shortcut", async () => {
   let record = {
     id: "well-1", lat: 11, lng: 77, success: true, depthFt: 300, waterStrikeFt: 220, yieldLpm: 40,
     drilledAt: "2026-09-14T00:00:00.000Z",
     rigSubmissionSchemaVersion: "8.0.0",
+    verificationStatus: "SUBMITTED",
     provenance: { sourceType: "operator" },
     verified: false, flagged: false, ledgerScoredAt: null,
     datasetEligibility: { eligible: false, status: "awaiting_operator_submission_verification" },
@@ -182,43 +183,32 @@ test("ledger closes only after verification and reopens when trust is removed", 
   const server = await new Promise((resolve) => {
     const s = app.listen(0, () => resolve(s));
   });
-  const base = `http://127.0.0.1:${server.address().port}`;
   try {
-    let response = await fetch(`${base}/api/admin/logs/well-1`, {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/logs/well-1`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ verified: true }),
     });
-    assert.equal(response.status, 200);
-    assert.equal(record.verified, true);
-    assert.equal(record.datasetEligibility.eligible, true);
-    assert.equal(prediction.actual.borewellId, "well-1");
-    assert.equal(prediction.correct, true);
-    assert.ok(record.ledgerScoredAt);
-
-    response = await fetch(`${base}/api/admin/logs/well-1`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ verified: false }),
-    });
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 409);
     assert.equal(record.verified, false);
     assert.equal(record.datasetEligibility.eligible, false);
     assert.equal(prediction.actual, null);
-    assert.equal(prediction.correct, null);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
 });
 
-test("a prediction created after the drilling outcome is never scored", async () => {
+test("legacy direct verification cannot score even a temporally eligible prediction", async () => {
   let record = {
     id: "well-late", lat: 11, lng: 77, success: false, depthFt: 450, waterStrikeFt: 0, yieldLpm: 0,
     drilledAt: "2026-09-14T00:00:00.000Z",
     rigSubmissionSchemaVersion: "8.0.0",
+    verificationStatus: "SUBMITTED",
     provenance: { sourceType: "operator" },
     verified: false, flagged: false, ledgerScoredAt: null,
     datasetEligibility: { eligible: false, status: "awaiting_operator_submission_verification" },
   };
   let prediction = {
     id: "pred-late", lat: 11, lng: 77, successProbability: 20, actual: null, correct: null,
-    createdAt: "2026-09-14T10:00:00.000Z",
+    createdAt: "2026-09-13T10:00:00.000Z",
   };
   const db = {
     getAllBorewells: async () => [record],
@@ -245,7 +235,7 @@ test("a prediction created after the drilling outcome is never scored", async ()
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/logs/well-late`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ verified: true }),
     });
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 409);
     assert.equal(prediction.actual, null);
     assert.equal(record.ledgerScoredPredictions, 0);
   } finally {
@@ -264,6 +254,7 @@ test("offline Phase 3 targets and nearby evidence reject unverified or flagged o
     waterStrikeFt: 220,
     yieldLpm: 40,
     rigSubmissionSchemaVersion: "8.0.0",
+    verificationStatus: "SUBMITTED",
     provenance: { sourceType: "operator" },
     datasetEligibility: { eligible: false },
     verified: false,
@@ -272,7 +263,12 @@ test("offline Phase 3 targets and nearby evidence reject unverified or flagged o
   assert.equal(validateTrainingTarget(base).valid, false);
   assert.equal(isTrustedBorewellEvidence(base), false);
 
-  const verified = { ...base, verified: true, datasetEligibility: { eligible: true } };
+  const verified = {
+    ...base,
+    verificationStatus: "VERIFIED",
+    verified: true,
+    datasetEligibility: { eligible: true },
+  };
   assert.equal(validateTrainingTarget(verified).valid, true);
   assert.equal(isTrustedBorewellEvidence(verified), true);
 
