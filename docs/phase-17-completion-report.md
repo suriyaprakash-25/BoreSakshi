@@ -174,7 +174,7 @@ Phase 17-specific regression guards include:
 
 Verified full ML suite result:
 
-- **36 passed**
+- **29 passed**
 - **0 failed**
 - **2 upstream dependency deprecation warnings**
 
@@ -207,7 +207,7 @@ For commit `30cac98c31c5153e326edfc091990a823d1de2aa`, workflow run `34927411360
 | Frontend production-preview smoke | PASS |
 | Server production dependency audit | PASS — 0 vulnerabilities |
 | Web production dependency audit | PASS — 0 production vulnerabilities |
-| Full ML suite | PASS — 36 passed, 0 failed |
+| Full ML suite | PASS — 29 passed, 0 failed |
 | Aggregate Phase 17 release gate | PASS |
 
 On that same runtime implementation head, inherited BoreSakshi workflows for **Phases 4, 5, 6, 7, 8, 9, 10, 11 and 15** also completed successfully.
