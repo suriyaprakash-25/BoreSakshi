@@ -22,7 +22,7 @@ permissions:
 
 concurrency:
   group: phase18-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   REGISTRY: ghcr.io
@@ -48,6 +48,7 @@ jobs:
         run: npm ci
       - name: Syntax check Phase 18 runtime, migrations and scripts
         run: |
+          node --check server/production.js
           node --check server/productionConfig.js
           node --check server/scripts/production-preflight.js
           node --check server/migrations/runner.js
@@ -55,6 +56,7 @@ jobs:
           bash -n deploy/scripts/release.sh
           bash -n deploy/scripts/smoke-test.sh
           bash -n deploy/scripts/backup-offsite.sh
+          bash -n deploy/scripts/restore-drill.sh
       - name: Run complete backend regression suite
         working-directory: server
         run: npm run test:phase17
@@ -64,6 +66,45 @@ jobs:
       - name: Audit production server dependencies
         working-directory: server
         run: npm audit --omit=dev --audit-level=high
+
+  migration-integration:
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      MONGODB_URI: mongodb://127.0.0.1:27017/
+      MONGODB_DB: BoreSakshiPhase18MigrationCI
+      BORESAKSHI_MIGRATION_ROLLBACK_APPROVED: YES
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+      - name: Verify migration status, apply, idempotence and explicit rollback
+        working-directory: server
+        run: |
+          npm run migrate:status | tee /tmp/status-before.json
+          npm run migrate:up | tee /tmp/migrate-up.json
+          npm run migrate:status | tee /tmp/status-after.json
+          grep -q '"applied": true' /tmp/status-after.json
+          npm run migrate:up | tee /tmp/migrate-idempotent.json
+          grep -q '"result": \[\]' /tmp/migrate-idempotent.json
+          npm run migrate:down | tee /tmp/migrate-down.json
+          npm run migrate:status | tee /tmp/status-final.json
+          grep -q '"applied": false' /tmp/status-final.json
 
   frontend-release-tests:
     runs-on: ubuntu-latest
@@ -171,7 +212,7 @@ jobs:
             VITE_API_URL=
           cache-from: type=gha,scope=phase18-${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=phase18-${{ matrix.component }}
-      - name: Inspect non-root image metadata
+      - name: Inspect built image metadata
         run: |
           docker image inspect boresakshi-${{ matrix.component }}:phase18-ci >/tmp/image.json
           test -s /tmp/image.json
@@ -180,12 +221,13 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - application-release-tests
+      - migration-integration
       - frontend-release-tests
       - ml-release-tests
       - deployment-contract
       - container-build
     steps:
-      - run: echo "BoreSakshi Phase 18 source, tests, container builds and deployment contracts passed."
+      - run: echo "BoreSakshi Phase 18 source, tests, real migrations, container builds and deployment contracts passed."
 
   publish-images:
     if: >-
@@ -221,8 +263,7 @@ jobs:
           push: true
           provenance: true
           sbom: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-${{ matrix.component }}:${{ github.sha }}
+          tags: ${{ env.IMAGE_PREFIX }}-${{ matrix.component }}:${{ github.sha }}
           build-args: |
             VITE_API_URL=
           cache-from: type=gha,scope=phase18-${{ matrix.component }}
