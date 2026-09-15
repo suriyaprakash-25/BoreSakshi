@@ -1,14 +1,14 @@
 groups:
   - name: boresakshi-production
     rules:
-      - alert: BoreSakshiEndpointDown
-        expr: probe_success{job="boresakshi-health"} == 0
+      - alert: BoreSakshiApiMetricsUnavailable
+        expr: up{job="boresakshi-api"} == 0
         for: 2m
         labels:
           severity: critical
         annotations:
-          summary: "BoreSakshi endpoint is down"
-          description: "{{ $labels.instance }} has failed blackbox probes for more than 2 minutes."
+          summary: "BoreSakshi API metrics endpoint is unavailable"
+          description: "Prometheus has been unable to scrape the BoreSakshi API for more than two minutes. Docker health/readiness checks and release smoke tests provide service-level probing."
 
       - alert: BoreSakshiApiHigh5xxRate
         expr: |
