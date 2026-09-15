@@ -92,9 +92,9 @@ friction is the pitch). `server/auth.js` holds `signup`/`signin` (phone + bcrypt
 password, `operators` collection) and a `requireAuth` JWT middleware; `POST
 /api/borewells` is the one protected route and derives `operatorId`/`operatorName`
 from the token (never from client input — don't re-add a free-text operator name).
-JWT secret is `process.env.JWT_SECRET` (dev fallback in the file). On the client,
-`web/src/auth.jsx` is a context over a localStorage token (keys/helpers live in
-`api.js`); `components/RequireOperator.jsx` gates `/log` and redirects to `/signin`
+JWT secret is `process.env.JWT_SECRET`. On the client, `web/src/auth.jsx`
+restores the safe profile from `GET /api/auth/session`; the HTTP-only cookie is the
+sole session credential and no authentication state is kept in localStorage; `components/RequireOperator.jsx` gates `/log` and redirects to `/signin`
 remembering `location.state.from`. `AuthScreen.jsx` serves both `/signin` and
 `/signup` via a `mode` prop; `AuthBadge` (in `AppHeader`) shows name+signout or a
 Sign in link. No OTP/email/OAuth — out of scope. `predict.js` and the scoring loop

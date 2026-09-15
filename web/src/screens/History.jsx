@@ -47,7 +47,7 @@ export default function History() {
           </div>
         ) : (
           <ul className="hist-list">
-            {shown.map((l) => <LogItem key={l.id} log={l} />)}
+            {shown.map((l) => <LogItem key={l.id} log={l} observationsEnabled />)}
           </ul>
         )}
       </div>
