@@ -148,7 +148,7 @@ complete Python ML regression/leakage/inference suite
 
 The real-Mongo E2E covers operator registration/login, admin operator verification, farmer prediction persistence, explicit fallback behavior when ML is unavailable, rig evidence upload, structured drilling submission, Phase 9 verification, Phase 11 accountability scoring, public privacy projection and outcome reopening/audit retention.
 
-Verified Phase 17 runtime-head results: 77 active backend tests passed with two intentional skips in the generic suite, the separate Mongo lifecycle passed, 5 frontend tests passed, the production frontend build/preview passed, 36 ML tests passed, and production server/web dependency audits passed with zero production vulnerabilities. See `docs/phase-17-full-testing.md` and `docs/phase-17-completion-report.md` for the exact scope and boundaries.
+Verified Phase 17 runtime-head results: 77 active backend tests passed with two intentional skips in the generic suite, the separate Mongo lifecycle passed, 5 frontend tests passed, the production frontend build/preview passed, 29 ML tests passed, and production server/web dependency audits passed with zero production vulnerabilities. See `docs/phase-17-full-testing.md` and `docs/phase-17-completion-report.md` for the exact scope and boundaries.
 
 ## Run locally
 
