@@ -18,21 +18,3 @@ scrape_configs:
       credentials_file: /run/secrets/monitoring_token
     static_configs:
       - targets: ["api:4000"]
-
-  - job_name: boresakshi-health
-    metrics_path: /probe
-    params:
-      module: [http_2xx]
-    static_configs:
-      - targets:
-          - http://api:4000/api/health/live
-          - http://api:4000/api/health/ready
-          - http://ml:8000/ml/health
-          - http://web:8080/healthz
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: __param_target
-      - source_labels: [__param_target]
-        target_label: instance
-      - target_label: __address__
-        replacement: blackbox:9115
