@@ -128,7 +128,7 @@ Phase 15 adds application-level production controls without replacing the existi
 - AES-256-GCM encrypted/checksummed Mongo backups and guarded restore;
 - high-severity production dependency-audit gates for server and web.
 
-Phase 15 hardens the application. Phase 18 still owns deployment infrastructure such as TLS termination, managed secrets, durable private evidence storage, scheduled off-host backups, centralized monitoring/alerts and disaster-recovery operations.
+Phase 15 hardens the application. Phase 18 supplies the deployment/operations package around those controls; real infrastructure credentials and reviewed ML artifacts remain deployment-time inputs rather than committed source data.
 
 ## Full release testing
 
@@ -149,6 +149,23 @@ complete Python ML regression/leakage/inference suite
 The real-Mongo E2E covers operator registration/login, admin operator verification, farmer prediction persistence, explicit fallback behavior when ML is unavailable, rig evidence upload, structured drilling submission, Phase 9 verification, Phase 11 accountability scoring, public privacy projection and outcome reopening/audit retention.
 
 Verified Phase 17 runtime-head results: 77 active backend tests passed with two intentional skips in the generic suite, the separate Mongo lifecycle passed, 5 frontend tests passed, the production frontend build/preview passed, 29 ML tests passed, and production server/web dependency audits passed with zero production vulnerabilities. See `docs/phase-17-full-testing.md` and `docs/phase-17-completion-report.md` for the exact scope and boundaries.
+
+## Production deployment and operations
+
+Phase 18 adds the provider-neutral production package and delivery controls:
+
+- non-root API, ML and web production containers with read-only filesystems/capability dropping/resource limits;
+- production/staging Compose topologies and private internal service networking;
+- fail-closed API and ML production preflight checks;
+- versioned additive MongoDB migrations with an explicit rollback gate;
+- graceful API shutdown/draining;
+- immutable commit-SHA image releases, staging-first delivery, smoke validation and previous-release rollback;
+- durable private rig-evidence and encrypted-backup volume mounts;
+- encrypted off-site restic backup plus scheduled restore rehearsal;
+- protected Prometheus metrics, Alertmanager, Loki, Fluent Bit and Grafana configuration;
+- GitHub Actions gates for full regression, dependency audits, real migration integration, Docker builds, image publication, staging and production environment approval.
+
+The production templates deliberately default external readiness attestations to `NO`. A live production deployment must provide real HTTPS/DNS, managed/private MongoDB, secrets, durable encrypted storage, off-site backup credentials, a tested alert receiver, deployment hosts/GitHub environment secrets and the human-reviewed active ML artifact chain. See `deploy/README.md` and `docs/phase-18-production-deployment.md`.
 
 ## Run locally
 
@@ -244,6 +261,6 @@ Signup displays a recovery code once. Save it securely; only its hash is stored 
 - [x] Phase 11 — model-version prediction accountability, calibration, depth/yield error and regional performance
 - [x] Phase 15 — production application security, privacy, sessions, recovery, audits, backups and monitoring
 - [x] Phase 17 — full frontend/backend/ML/integration/end-to-end release testing
-- [ ] Phase 18 — deployment and DevOps
+- [x] Phase 18 — production deployment package, CI/CD, rollback, monitoring, backup and recovery controls
 
-Phase 10 consumes only Phase 9-trusted data and never automatically replaces production. Phase 11 supplies model-version-scoped post-deployment evidence to Phase 10 monitoring but never auto-retrains or auto-rolls back a model. Phase 15 closes the application-level security/reliability gate, Phase 17 closes the full-system software testing gate, and Phase 18 remains responsible for durable production deployment and operations.
+All BoreSakshi v1 software roadmap phases are now implemented in `main`. Phase 10 still never replaces production automatically, and a live production cutover still requires the real external infrastructure/secrets plus the reviewed active ML artifacts and explicit deployment approvals described in Phase 18.
