@@ -1,7 +1,7 @@
 // OperatorLog.jsx — the rig-operator drill-logging screen (auth-gated by /log).
 // Mobile-web, type-first with OPTIONAL voice dictation, auto-GPS location.
-// Every completed job logged here becomes a VERIFIED OUTCOME that feeds the
-// accountability ledger — the confirmation screen makes that contribution visible.
+// Every completed job logged here is submitted for admin review. An optional
+// prediction reference provides the explicit accountability-ledger linkage.
 // Operator identity comes from the signed-in account, not a free-text field.
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -32,7 +32,7 @@ const STRATA_OPTIONS = [
 const LANGS = { ta: { label: "தமிழ்", locale: "ta-IN" }, en: { label: "English", locale: "en-IN" } };
 
 const EMPTY = {
-  lat: "", lng: "", placeName: "", depthFt: "", strata: "", waterStrikeFt: "", yieldLpm: "",
+  lat: "", lng: "", placeName: "", predictionId: "", depthFt: "", strata: "", waterStrikeFt: "", yieldLpm: "",
 };
 
 export default function OperatorLog() {
@@ -121,6 +121,7 @@ export default function OperatorLog() {
       yieldLpm: success ? (form.yieldLpm ? Number(form.yieldLpm) : null) : 0,
       success,
       language: lang,
+      predictionId: form.predictionId.trim() || undefined,
       // operatorId / operatorName are set server-side from the auth token
     };
 
@@ -175,8 +176,8 @@ export default function OperatorLog() {
                   </>
                 ) : (
                   <>
-                    <strong>Added to the verified-outcome record.</strong> Any BoreSakshi
-                    prediction within 5&nbsp;km will now be scored against this real result.
+                    <strong>Submitted for verification.</strong> A borewell log becomes
+                    prediction evidence only after an admin approves it.
                   </>
                 )}
               </div>
@@ -249,6 +250,20 @@ export default function OperatorLog() {
         {/* village / area (optional) — prefilled when logging an assigned site */}
         <Field label="Village / area (optional)" labelIcon={MapPin} field="placeName" form={form} set={set}
           listeningField={listeningField} dictate={dictate} placeholder="e.g. Pallipalayam" />
+
+        <Field
+          label="Drilling reference (optional)"
+          labelIcon={Scale}
+          field="predictionId"
+          form={form}
+          set={set}
+          listeningField={listeningField}
+          dictate={dictate}
+          placeholder="Paste the farmer's prediction reference"
+        />
+        <p className="op-field-note">
+          Enter the reference shown to the farmer only when this log is the outcome of that prediction.
+        </p>
 
         {/* outcome */}
         <div className="op-field">

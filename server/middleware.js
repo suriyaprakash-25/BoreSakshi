@@ -34,6 +34,17 @@ export const signinBruteLimiter = rateLimit({
   message: msg("Too many failed sign-in attempts for this number. Please wait ~10 minutes and try again."),
 });
 
+// Public predictions may create accountability records, so rate limit them
+// independently from authentication traffic. Use a shared store (Redis) before
+// horizontal production scaling; this in-memory limiter is per process.
+export const predictLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: msg("Too many prediction requests from this device. Please wait a few minutes and try again."),
+});
+
 // unknown route → clean JSON 404
 export function notFound(_req, res) {
   res.status(404).json({ error: "Not found" });
