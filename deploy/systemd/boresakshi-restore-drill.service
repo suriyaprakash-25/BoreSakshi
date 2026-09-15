@@ -1,0 +1,20 @@
+[Unit]
+Description=BoreSakshi non-destructive off-site restore drill
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/boresakshi
+EnvironmentFile=/etc/boresakshi/deploy.env
+ExecStart=/usr/bin/bash /opt/boresakshi/deploy/scripts/restore-drill.sh
+User=root
+Group=root
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/tmp /opt/boresakshi /etc/boresakshi
+NoNewPrivileges=true
