@@ -8,11 +8,13 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { placeLabel, fmtDate } from "../metrics.js";
+import ObservationPanel from "./ObservationPanel.jsx";
 
-export default function LogItem({ log, showOperator = false, adminActions = null }) {
+export default function LogItem({ log, showOperator = false, adminActions = null, observationsEnabled = false }) {
   const [flagging, setFlagging] = useState(false);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showObservations, setShowObservations] = useState(false);
 
   async function run(fn, successMsg) {
     setBusy(true);
@@ -70,6 +72,16 @@ export default function LogItem({ log, showOperator = false, adminActions = null
           {log.flaggedBy ? <span className="log-flag-by"> — flagged by {log.flaggedBy}</span> : null}
         </div>
       )}
+
+      {observationsEnabled && (
+        <div className="log-actions">
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowObservations((open) => !open)}>
+            <Waves size={14} strokeWidth={2.2} /> {showObservations ? "Hide observations" : "Follow-up observations"}
+          </button>
+        </div>
+      )}
+
+      {showObservations && observationsEnabled && <ObservationPanel borewellId={log.id} />}
 
       {adminActions && (
         flagging ? (

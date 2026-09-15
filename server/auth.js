@@ -1,22 +1,32 @@
-// auth.js — operator + admin accounts (signup / signin) + JWT auth middleware.
-// One auth flow for everyone; an account's `role` ('operator' | 'admin') decides
-// its permissions. Admins are created by setting role:'admin' directly in MongoDB
-// (there is no in-app role management). Request bodies are validated upstream.
+// auth.js — cookie sessions, account auth, authorization, and CSRF protection.
 import bcrypt from "bcryptjs";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import jwt from "jsonwebtoken";
 import { nanoid } from "nanoid";
 import { db } from "./db.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+const COOKIE_SAME_SITE = (process.env.COOKIE_SAME_SITE || "strict").toLowerCase();
 
 if (!JWT_SECRET) {
   console.error("[BoreSakshi] FATAL: JWT_SECRET is not set. Set it in server/.env");
   process.exit(1);
 }
+if (!["strict", "lax", "none"].includes(COOKIE_SAME_SITE)) {
+  console.error("[BoreSakshi] FATAL: COOKIE_SAME_SITE must be strict, lax, or none.");
+  process.exit(1);
+}
 
-// safe view of an account — never the passwordHash. Older accounts may predate
-// these fields, so default them here.
+// SameSite=None is required when frontend and API are deployed on different
+// sites, and browsers require it to be paired with Secure.
+const sessionCookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production" || COOKIE_SAME_SITE === "none",
+  sameSite: COOKIE_SAME_SITE,
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
 const publicOperator = (op) => ({
   id: op.id,
   name: op.name,
@@ -26,11 +36,20 @@ const publicOperator = (op) => ({
   verified: !!op.verified,
 });
 
-function issueToken(op) {
-  return jwt.sign({ id: op.id, name: op.name, role: op.role || "operator" }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+function issueToken(op, csrfToken) {
+  return jwt.sign(
+    { id: op.id, name: op.name, role: op.role || "operator", csrfToken },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
 }
 
-// normalise phone to digits so "+91 98765 43210" and "9876543210" don't collide
+function issueSession(res, operator, status = 200) {
+  const csrfToken = randomBytes(32).toString("base64url");
+  res.cookie("token", issueToken(operator, csrfToken), sessionCookieOptions);
+  res.status(status).json({ operator: publicOperator(operator), csrfToken });
+}
+
 const normalisePhone = (p) => String(p || "").replace(/[^\d]/g, "");
 
 export async function signup(req, res) {
@@ -50,7 +69,7 @@ export async function signup(req, res) {
     name: cleanName,
     phone: cleanPhone,
     passwordHash,
-    role: "operator",   // admins are promoted manually in the DB, never via signup
+    role: "operator",
     status: "active",
     verified: false,
     createdAt: new Date().toISOString(),
@@ -63,65 +82,39 @@ export async function signup(req, res) {
     }
     throw err;
   }
-  // starter work queue so the new operator's dashboard has assigned sites to log
   await db.seedAssignmentsForOperator(operator.id);
-
-  const token = issueToken(operator);
-  res.cookie("token", token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
-  res.status(201).json({ operator: publicOperator(operator) });
+  issueSession(res, operator, 201);
 }
 
 export async function signin(req, res) {
   const { phone, password } = req.body;
   const cleanPhone = normalisePhone(phone);
-
   const operator = await db.getOperatorByPhone(cleanPhone);
-  // same message whether the phone or the password is wrong (don't leak which)
   const bad = () => res.status(401).json({ error: "Invalid phone or password" });
   if (!operator) return bad();
 
   const ok = await bcrypt.compare(String(password), operator.passwordHash);
   if (!ok) return bad();
-
-  // deactivated accounts can't start a new session
   if (operator.status === "deactivated") {
     return res.status(403).json({ error: "This account has been deactivated. Please contact the administrator." });
   }
-
-  const token = issueToken(operator);
-  res.cookie("token", token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
-  res.json({ operator: publicOperator(operator) });
+  issueSession(res, operator);
 }
 
-export async function signout(req, res) {
+export async function signout(_req, res) {
   res.clearCookie("token", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    secure: sessionCookieOptions.secure,
+    sameSite: sessionCookieOptions.sameSite,
   });
   res.json({ success: true });
 }
 
-// middleware: require a valid Bearer token AND an active account. Re-reads the
-// account from the DB on every request so a deactivation (or role change) takes
-// effect immediately, even for an already-issued token. Attaches req.operator.
 export async function requireAuth(req, res, next) {
   try {
     const header = req.headers.authorization || "";
     let token = header.startsWith("Bearer ") ? header.slice(7) : null;
-    if (!token && req.cookies && req.cookies.token) {
-      token = req.cookies.token;
-    }
+    if (!token && req.cookies?.token) token = req.cookies.token;
     if (!token) return res.status(401).json({ error: "Sign in to continue" });
 
     let payload;
@@ -144,13 +137,30 @@ export async function requireAuth(req, res, next) {
       status: op.status || "active",
       verified: !!op.verified,
     };
+    req.csrfToken = payload.csrfToken || null;
     next();
   } catch (err) {
     next(err);
   }
 }
 
-// middleware: require an admin. Must run AFTER requireAuth.
+// Required after requireAuth for all cookie-authenticated state changes.
+export function requireCsrf(req, res, next) {
+  const supplied = req.get("X-CSRF-Token");
+  if (!req.csrfToken || !supplied) {
+    return res.status(403).json({ error: "Invalid or missing CSRF token. Refresh and try again." });
+  }
+  const expectedBuffer = Buffer.from(req.csrfToken);
+  const suppliedBuffer = Buffer.from(supplied);
+  if (
+    expectedBuffer.length !== suppliedBuffer.length ||
+    !timingSafeEqual(expectedBuffer, suppliedBuffer)
+  ) {
+    return res.status(403).json({ error: "Invalid or missing CSRF token. Refresh and try again." });
+  }
+  next();
+}
+
 export function requireAdmin(req, res, next) {
   if (!req.operator) return res.status(401).json({ error: "Sign in to continue" });
   if (req.operator.role !== "admin") return res.status(403).json({ error: "Admin access required" });
