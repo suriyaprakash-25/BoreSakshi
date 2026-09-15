@@ -10,9 +10,7 @@ RIG_MEDIA_VOLUME="${RIG_MEDIA_VOLUME:-boresakshi_rig_media}"
 BACKUP_VOLUME="${BACKUP_VOLUME:-boresakshi_backups}"
 RESTIC_IMAGE="${RESTIC_IMAGE:-restic/restic:0.19.1}"
 
-for command in docker; do
-  command -v "$command" >/dev/null || { echo "Missing required command: $command" >&2; exit 2; }
-done
+command -v docker >/dev/null || { echo "Missing required command: docker" >&2; exit 2; }
 for file in "$COMPOSE_FILE" "$SERVER_ENV_FILE" "$ML_ENV_FILE" "$RESTIC_ENV_FILE"; do
   test -f "$file" || { echo "Required file not found: $file" >&2; exit 2; }
 done
@@ -22,13 +20,13 @@ export SERVER_ENV_FILE ML_ENV_FILE RIG_MEDIA_VOLUME BACKUP_VOLUME
 : "${MODEL_ARTIFACT_DIR:?MODEL_ARTIFACT_DIR must point to the mounted reviewed ML artifact tree}"
 
 echo "[phase18] creating encrypted Mongo backup inside the durable backup volume"
-docker compose -f "$COMPOSE_FILE" run --rm --no-deps api npm run backup:create
+docker compose -f "$COMPOSE_FILE" run --rm --no-deps api node scripts/backup.js
 
 echo "[phase18] verifying newest encrypted Mongo backup before off-site transfer"
 docker compose -f "$COMPOSE_FILE" run --rm --no-deps api sh -ec '
   latest="$(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -print | sort | tail -1)"
   test -n "$latest"
-  npm run backup:verify -- "$latest"
+  node scripts/verify-backup.js "$latest"
 '
 
 restic() {
