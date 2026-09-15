@@ -1,0 +1,13 @@
+route:
+  receiver: boresakshi-ops
+  group_by: [alertname, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: boresakshi-ops
+    # Configure at least one real receiver before production and set
+    # ALERT_DELIVERY_CONFIGURED=YES only after a test alert is delivered.
+    # Examples: Slack, PagerDuty, Opsgenie, email or webhook.
+    webhook_configs: []
