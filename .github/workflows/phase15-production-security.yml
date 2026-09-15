@@ -11,11 +11,16 @@ on:
     branches:
       - "phase-15-production-security-reliability"
 
+permissions:
+  contents: write
+
 jobs:
   dependency-lock-remediation:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: phase-15-production-security-reliability
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -28,20 +33,21 @@ jobs:
         # major Vite upgrade. It still writes the non-breaking production fixes.
         # The authoritative production audit below is run separately with --omit=dev.
         run: npm audit fix --package-lock-only || true
-      - name: Verify remediated production locks before packaging
+      - name: Verify remediated production locks
         run: |
           cd server && npm audit --omit=dev --audit-level=high
           cd ../web && npm audit --omit=dev --audit-level=high
-      - name: Show security-only lock changes
-        run: git diff -- server/package-lock.json web/package-lock.json
-      - name: Package refreshed lockfiles for review
-        run: tar -czf phase15-fixed-lockfiles.tgz server/package-lock.json web/package-lock.json
-      - uses: actions/upload-artifact@v4
-        with:
-          name: phase15-fixed-lockfiles
-          path: phase15-fixed-lockfiles.tgz
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit reviewed production lock remediation
+        run: |
+          if git diff --quiet -- server/package-lock.json web/package-lock.json; then
+            echo "Lockfiles already contain the audited production fixes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/package-lock.json web/package-lock.json
+          git commit -m "phase15: remediate production dependency advisories"
+          git push origin HEAD:phase-15-production-security-reliability
 
   server-security-tests:
     runs-on: ubuntu-latest
