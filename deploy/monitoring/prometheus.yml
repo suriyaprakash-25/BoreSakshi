@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/alert-rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: boresakshi-api
+    metrics_path: /api/internal/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/monitoring_token
+    static_configs:
+      - targets: ["api:4000"]

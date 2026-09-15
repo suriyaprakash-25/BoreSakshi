@@ -21,6 +21,7 @@ const COLLECTIONS = [
   "ingestion_audit",
   "dataset_assets",
   "auth_sessions",
+  "schema_migrations",
 ];
 
 function safeStamp(date = new Date()) {

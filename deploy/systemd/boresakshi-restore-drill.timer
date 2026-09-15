@@ -1,0 +1,11 @@
+[Unit]
+Description=Run BoreSakshi restore drill monthly
+
+[Timer]
+OnCalendar=*-*-01 04:30:00
+Persistent=true
+RandomizedDelaySec=1800
+Unit=boresakshi-restore-drill.service
+
+[Install]
+WantedBy=timers.target
