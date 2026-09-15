@@ -1,0 +1,42 @@
+groups:
+  - name: boresakshi-production
+    rules:
+      - alert: BoreSakshiEndpointDown
+        expr: probe_success{job="boresakshi-health"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "BoreSakshi endpoint is down"
+          description: "{{ $labels.instance }} has failed blackbox probes for more than 2 minutes."
+
+      - alert: BoreSakshiApiHigh5xxRate
+        expr: |
+          sum(rate(boresakshi_http_requests_total{status_class="5xx"}[5m]))
+          /
+          clamp_min(sum(rate(boresakshi_http_requests_total[5m])), 0.001)
+          > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "BoreSakshi API 5xx rate exceeds 5%"
+          description: "The API has sustained an elevated server-error ratio for five minutes."
+
+      - alert: BoreSakshiApiLatencyHigh
+        expr: boresakshi_http_duration_ms{stat="avg"} > 2000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "BoreSakshi API latency is high"
+          description: "Average request latency for {{ $labels.route }} is above 2 seconds."
+
+      - alert: BoreSakshiApiMemoryHigh
+        expr: boresakshi_process_memory_bytes{kind="rss"} > 1073741824
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "BoreSakshi API RSS is above 1 GiB"
+          description: "Investigate memory growth before the container is OOM-killed."
