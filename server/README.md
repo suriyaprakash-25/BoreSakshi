@@ -7,6 +7,7 @@ API for the borewell logging tool, farmer prediction screen, public accountabili
 - Core collections: `borewells`, `predictions`, `operators`, `assignments`
 - Phase 2 collections: `ingestion_batches`, `staged_borewells`, `ingestion_audit`, `dataset_assets`
 - Phase 3 output: versioned offline ML-ready feature artifacts under `feature-artifacts/` (gitignored)
+- Phase 4 training: Python package under `../ml/` consumes Phase 3 artifacts and produces checksummed candidate model artifacts
 
 ## Run it
 
@@ -113,14 +114,33 @@ npm run features:build -- \
   --out=feature-artifacts/features-v1.json
 ```
 
+The Phase 4 depth target is `waterStrikeFt`, so Phase 3 feature rows now carry it under `labels` separately from total `depthFt`. It is never added to the `features` object.
+
 Start from `../docs/phase-3-feature-manifest.example.json`. Generated artifacts and raw geospatial data are gitignored by default.
 
-See `../docs/phase-3-geospatial-feature-engineering.md` for the feature contract, leakage controls, source requirements and Phase 4 review gate.
+See `../docs/phase-3-geospatial-feature-engineering.md` for the feature contract and leakage controls.
+
+## Phase 4 real-model training
+
+Phase 4 lives under `../ml/`. It trains separate candidate models for success probability, water-strike depth and yield. Candidate artifacts remain offline and unevaluated until Phase 5.
+
+```bash
+cd ../ml
+python -m venv .venv
+# activate environment
+python -m pip install -r requirements-candidates.txt
+python train.py \
+  --dataset ../server/feature-artifacts/features-v1.json \
+  --out artifacts \
+  --run-id phase4-real-v1
+```
+
+See `../docs/phase-4-real-ml-model.md` and `../ml/README.md` for the full training/artifact contract.
 
 ## Notes
 
 - **Only `db.js` talks to MongoDB.** `index.js` awaits its methods; `predict.js`, `ingestion.js`, `geospatial.js` and `featurePipeline.js` keep core logic deterministic/testable.
-- **The real AI still plugs into `predict.js` only.** Phase 3 builds real features but deliberately does not replace the existing deterministic mock before a model is trained and spatially evaluated.
+- **The live API still uses the deterministic mock.** Phase 4 trains candidate artifacts but does not bypass Phase 5 evaluation or Phase 6 service integration.
 - Imported Phase 2 rows cannot influence predictions until an admin approves them and publishes the batch.
-- Phase 3 feature artifacts report data coverage/provenance, not invented model performance metrics.
+- Phase 3 reports data coverage/provenance; Phase 4 registers candidate models; Phase 5 owns measured performance/calibration/uncertainty.
 - Env overrides: `MONGODB_URI`, `MONGODB_DB`, `PORT`, `INGESTION_MAX_BYTES`.

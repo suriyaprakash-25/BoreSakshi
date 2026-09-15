@@ -12,16 +12,18 @@ const manifest = {
 };
 const loadedLayers = [{ ...manifest.layers[0], data: parseAsciiGrid(gridText) }];
 const targets = [
-  { id: "w1", lat: 11.005, lng: 77.005, success: true, depthFt: 300, yieldLpm: 50, drilledAt: "2026-01-10T00:00:00Z" },
-  { id: "w2", lat: 11.006, lng: 77.006, success: false, depthFt: 350, yieldLpm: 0, drilledAt: "2026-02-10T00:00:00Z" },
+  { id: "w1", lat: 11.005, lng: 77.005, success: true, depthFt: 300, waterStrikeFt: 220, yieldLpm: 50, drilledAt: "2026-01-10T00:00:00Z" },
+  { id: "w2", lat: 11.006, lng: 77.006, success: false, depthFt: 350, waterStrikeFt: null, yieldLpm: 0, drilledAt: "2026-02-10T00:00:00Z" },
 ];
 
 test("training row keeps labels separate and excludes target outcome from nearby features", () => {
   const built = buildTrainingFeatureRow(targets[0], { layers: loadedLayers, borewells: targets, datasetVersion: manifest.datasetVersion, nearbyRadiusKm: 5, densityRadiusKm: 2, spatialBlockDeg: 0.1 });
   assert.equal(built.ok, true);
   assert.equal(built.row.labels.success, true);
+  assert.equal(built.row.labels.waterStrikeFt, 220);
   assert.equal(built.row.features.nearbyCount, 0);
   assert.equal(Object.prototype.hasOwnProperty.call(built.row.features, "success"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(built.row.features, "waterStrikeFt"), false);
 });
 
 test("feature dataset applies strict temporal ordering between training targets", () => {

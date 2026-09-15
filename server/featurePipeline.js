@@ -66,6 +66,7 @@ export function buildTrainingFeatureRow(target, {
     labels: {
       success: target.success,
       depthFt: finite(target.depthFt) ? target.depthFt : null,
+      waterStrikeFt: finite(target.waterStrikeFt) ? target.waterStrikeFt : null,
       yieldLpm: finite(target.yieldLpm) ? target.yieldLpm : null,
     },
     coverage: engineered.coverage,
