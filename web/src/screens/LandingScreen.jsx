@@ -115,7 +115,7 @@ export default function LandingScreen() {
         <section className="lp-final">
           <h2>Two ways in</h2>
           <div className="lp-cta">
-            <Link to="/" className="btn btn-primary btn-lg">
+            <Link to="/map" className="btn btn-primary btn-lg">
               <MapPin size={19} strokeWidth={2.2} /> Check a location
             </Link>
             <Link to="/signup" className="btn btn-ghost btn-lg">
