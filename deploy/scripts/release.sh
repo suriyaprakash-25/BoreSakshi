@@ -66,7 +66,7 @@ deploy_version() {
   compose run --rm --no-deps api npm run migrate:up
   echo "[phase18] starting release $release"
   compose_with_observability up -d --remove-orphans
-  "$ROOT/deploy/scripts/smoke-test.sh" "$DEPLOY_BASE_URL"
+  bash "$ROOT/deploy/scripts/smoke-test.sh" "$DEPLOY_BASE_URL"
 }
 
 case "${1:-status}" in
