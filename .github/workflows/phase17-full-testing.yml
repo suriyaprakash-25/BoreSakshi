@@ -11,6 +11,7 @@ on:
       - ".github/workflows/phase17-full-testing.yml"
   push:
     branches:
+      - "main"
       - "phase-17-complete-testing"
 
 jobs:
@@ -22,8 +23,8 @@ jobs:
       FRONTEND_URL: http://localhost:5173
       NODE_ENV: test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -67,8 +68,8 @@ jobs:
       FRONTEND_URL: http://localhost:5173
       NODE_ENV: test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -83,8 +84,8 @@ jobs:
   frontend-component-and-flow-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -121,8 +122,8 @@ jobs:
   ml-full-regression:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
