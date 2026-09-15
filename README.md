@@ -8,7 +8,7 @@ Know before you drill — a verified-outcome network + AI prediction engine that
 boresakshi/
 ├── server/   Node + Express + MongoDB API, trusted rig-data collection and accountability ledger
 ├── web/      React + Vite + Leaflet farmer/operator/admin UI
-└── ml/       training + scientific evaluation + FastAPI serving + activation preflight
+└── ml/       training + scientific evaluation + FastAPI serving + adaptive retraining/deployment controls
 ```
 
 ## Runtime prediction path
@@ -21,6 +21,8 @@ Node /api/predict
 Python /ml/predict
    ↓
 Live checksum-verified geospatial feature extraction
+   ↓
+Human-approved active model deployment pointer
    ↓
 Phase 5-selected success + depth + yield models
    ↓
@@ -60,6 +62,33 @@ Phase 8 provides structured evidence-backed field collection. Phase 9 provides t
 
 The Phase 9 trust/risk scores are operational review aids, not groundwater-model probabilities and not substitutes for Phase 5 scientific ML validation.
 
+## Continuous learning path
+
+```text
+Phase 9 VERIFIED outcomes
+   ↓
+new versioned feature dataset
+   ↓
+checksummed TrainingDatasetVersion
+   ↓
+Phase 4 candidate training
+   ↓
+Phase 5 spatial scientific evaluation
+   ↓
+production-model comparison
+   ↓
+HUMAN APPROVAL
+   ↓
+STAGED deployment
+   ↓ explicit DEPLOY
+ACTIVE deployment pointer
+   ↓
+post-deployment monitoring
+   ↓ explicit ROLLBACK when required
+```
+
+Phase 10 is continuous learning/adaptive retraining, **not reinforcement learning**. A new upload can never directly overwrite the production model. Automated comparison guards can hold a candidate for review, but only a separate human approval artifact and explicit deployment action can activate it.
+
 ## Run locally
 
 **1) Python ML service**
@@ -80,6 +109,19 @@ For a reviewed real-artifact v1 activation candidate, run the Phase 7 preflight 
 ```bash
 python activate.py --lat 11.36 --lng 77.80 --activation-id boresakshi-v1-candidate --out activations/boresakshi-v1-candidate
 ```
+
+Phase 10 adaptive retraining is managed through `ml/continuous.py`:
+
+```bash
+python continuous.py stage ...
+python continuous.py approve ...
+python continuous.py stage-deployment ...
+python continuous.py activate ... --confirm DEPLOY
+python continuous.py monitor ...
+python continuous.py rollback ... --confirm ROLLBACK
+```
+
+When `BORESAKSHI_DEPLOYMENT_MANIFEST` points to a checksummed ACTIVE Phase 10 deployment pointer, the ML service resolves that exact reviewed model/evaluation/feature chain. `BORESAKSHI_PHASE6_APPROVED=YES` remains a mandatory global serving kill switch.
 
 **2) Node backend**
 
@@ -113,10 +155,10 @@ npm run dev      # http://localhost:5173
 - [x] Phase 7 — real prediction-engine contract, immutable feature snapshots and activation preflight
 - [x] Phase 8 — authenticated structured rig-operator data collection + evidence + untrusted-by-default gate
 - [x] Phase 9 — formal verification lifecycle + suspicious-data review + operator/data trust + append-only audit
-- [ ] Phase 10 — continuous learning with human-reviewed promotion
+- [x] Phase 10 — adaptive retraining + production comparison + human approval + staged activation + rollback controls
 - [ ] Phase 11 — strengthened prediction accountability ledger
 - [ ] Phase 15 — production security and reliability
 - [ ] Phase 17 — full testing
 - [ ] Phase 18 — deployment and DevOps
 
-Phase 10 may consume only Phase 9 VERIFIED outcomes and must retain human/scientific promotion gates. Phase 15 must remediate dependency/security findings before launch; Phase 18 must provide durable evidence storage, backups and production deployment infrastructure.
+Phase 10 consumes only Phase 9-trusted data and never automatically replaces production. Phase 11 provides the model-version-scoped post-deployment evidence used by Phase 10 monitoring. Phase 15 must remediate dependency/security findings before launch; Phase 18 must provide durable evidence storage, backups and production deployment infrastructure.
