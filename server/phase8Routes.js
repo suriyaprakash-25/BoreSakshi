@@ -9,6 +9,7 @@ import {
   resolveEvidenceTokens,
   storeEvidenceUpload,
 } from "./rigEvidence.js";
+import { createPhase11Router } from "./phase11Routes.js";
 import { createPhase9Router } from "./phase9Routes.js";
 import {
   operatorReviewRequestSchema,
@@ -16,6 +17,7 @@ import {
   reviewReopenSchema,
   reviewStartSchema,
 } from "./phase9Validation.js";
+import { reopenPredictionAccountability, scorePredictionAgainstOutcome } from "./accountability.js";
 
 const rawEvidence = express.raw({ type: () => true, limit: process.env.RIG_MEDIA_UPLOAD_LIMIT || "50mb" });
 
@@ -23,38 +25,64 @@ function decodeFilename(value) {
   try { return decodeURIComponent(String(value || "evidence")); } catch { return String(value || "evidence"); }
 }
 
-async function closeNearbyPredictions({ db, record, distanceKm, NEAR_KM, now }) {
+async function appendPredictionAudit(db, { prediction, action, actor, details = {}, now }) {
+  if (typeof db.addIngestionAudit !== "function") return;
+  await db.addIngestionAudit({
+    id: nanoid(14),
+    batchId: null,
+    recordId: null,
+    scopeType: "prediction_accountability",
+    scopeId: prediction.id,
+    action,
+    actor: actor ? { id: actor.id, name: actor.name, role: actor.role || "admin" } : { id: "system", name: "BoreSakshi", role: "system" },
+    details,
+    createdAt: now,
+  });
+}
+
+async function closeNearbyPredictions({ db, record, distanceKm, NEAR_KM, now, actor }) {
   const openPreds = (await db.getPredictions()).filter((p) => p.actual == null);
   const drilledAtMs = Date.parse(record.drilledAt || record.drilledDate || "");
   let scored = 0;
   for (const prediction of openPreds) {
-    const predictionAtMs = Date.parse(prediction.createdAt || "");
+    const predictionAtMs = Date.parse(prediction.createdAt || prediction.predictionTimestamp || "");
     if (!Number.isFinite(drilledAtMs) || !Number.isFinite(predictionAtMs) || predictionAtMs > drilledAtMs) continue;
-    if (distanceKm({ lat: record.lat, lng: record.lng }, { lat: prediction.lat, lng: prediction.lng }) > NEAR_KM) continue;
-    const predictedSuccess = prediction.successProbability >= 50;
-    await db.updatePrediction(prediction.id, {
-      actual: {
-        success: record.success,
-        depthFt: record.depthFt,
-        waterStrikeFt: record.waterStrikeFt,
-        yieldLpm: record.yieldLpm,
+    const matchDistanceKm = distanceKm({ lat: record.lat, lng: record.lng }, { lat: prediction.lat, lng: prediction.lng });
+    if (matchDistanceKm > NEAR_KM) continue;
+    const patch = scorePredictionAgainstOutcome(prediction, record, { now, matchDistanceKm });
+    await db.updatePrediction(prediction.id, patch);
+    await appendPredictionAudit(db, {
+      prediction,
+      action: "verified_outcome_scored",
+      actor,
+      now,
+      details: {
         borewellId: record.id,
-        verified: true,
-        closedAt: now,
+        verificationStatus: record.verificationStatus || (record.verified ? "VERIFIED" : "UNKNOWN"),
+        matchDistanceKm,
+        successCorrect: patch.correct,
+        metrics: patch.accountability.metrics,
       },
-      correct: predictedSuccess === record.success,
     });
     scored += 1;
   }
   return scored;
 }
 
-async function reopenPredictionsForRecord(db, borewellId) {
+async function reopenPredictionsForRecord(db, borewellId, { actor, reason, now }) {
   const predictions = await db.getPredictions();
   let reopened = 0;
   for (const prediction of predictions) {
-    if (prediction.actual?.borewellId !== borewellId) continue;
-    await db.updatePrediction(prediction.id, { actual: null, correct: null });
+    if (prediction.actual?.borewellId !== borewellId && prediction.accountability?.actual?.borewellId !== borewellId) continue;
+    const patch = reopenPredictionAccountability(prediction, { now, reason });
+    await db.updatePrediction(prediction.id, patch);
+    await appendPredictionAudit(db, {
+      prediction,
+      action: "outcome_reopened",
+      actor,
+      now,
+      details: { borewellId, reason },
+    });
     reopened += 1;
   }
   return reopened;
@@ -93,8 +121,12 @@ export function createPhase8Router({
 }) {
   const router = express.Router();
 
-  // Phase 9 is mounted inside the Phase 8 router so the stacked branch remains
-  // additive and the existing index.js wiring does not need to be rewritten.
+  // Phase 11 is mounted at the front of the stacked router so its additive
+  // prediction snapshot + ledger routes supersede the earlier index.js MVP
+  // handlers without rewriting the application entry point.
+  router.use(createPhase11Router({ db, requireAuth, requireAdmin, validate }));
+
+  // Phase 9 remains the authoritative operator verification lifecycle.
   router.use(createPhase9Router({
     db,
     requireAuth,
@@ -225,9 +257,6 @@ export function createPhase8Router({
     } catch (error) { next(error); }
   });
 
-  // Phase 9 removes the old direct operator-record Verify/Unverify bypass. Imported
-  // Phase 2 records keep the legacy verified toggle; operator records must use the
-  // formal /api/admin/review/... lifecycle above.
   router.patch("/api/admin/logs/:id", requireAuth, requireAdmin, validate(adminLogPatchSchema), async (req, res, next) => {
     try {
       const existing = await findBorewell(db, req.params.id);
@@ -258,8 +287,6 @@ export function createPhase8Router({
         patch.flagReason = "";
         patch.flaggedAt = null;
         patch.flaggedBy = null;
-        // Clearing a Phase 9 flag never promotes the record automatically; the
-        // review lifecycle must still issue a fresh VERIFIED decision.
         if (operatorSubmission && existing.verificationStatus !== "VERIFIED") {
           patch.datasetEligibility = { eligible: false, status: "under_verification_review" };
         }
@@ -280,13 +307,17 @@ export function createPhase8Router({
       let ledgerReopened = 0;
 
       if (trustedNow && !wasTrustedAndScored) {
-        const scored = await closeNearbyPredictions({ db, record: updated, distanceKm, NEAR_KM, now });
+        const scored = await closeNearbyPredictions({ db, record: updated, distanceKm, NEAR_KM, now, actor: req.operator });
         updated = await db.updateBorewell(updated.id, {
           ledgerScoredAt: now,
           ledgerScoredPredictions: scored,
         });
       } else if (!trustedNow && wasTrustedAndScored) {
-        ledgerReopened = await reopenPredictionsForRecord(db, updated.id);
+        ledgerReopened = await reopenPredictionsForRecord(db, updated.id, {
+          actor: req.operator,
+          reason: patch.flagged ? "Borewell outcome was manually flagged and requires re-review" : "Borewell outcome trust was removed by admin moderation",
+          now,
+        });
         updated = await db.updateBorewell(updated.id, {
           ledgerScoredAt: null,
           ledgerScoredPredictions: 0,
