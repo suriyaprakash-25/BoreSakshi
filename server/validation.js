@@ -2,6 +2,7 @@
 // body through a schema; unknown keys are stripped and bad input is rejected as
 // a clean 400 before any handler/DB logic runs.
 import { z } from "zod";
+import { SOURCE_TYPES, DATASET_KINDS } from "./ingestion.js";
 
 const password = z.string()
   .min(8, "Password must be at least 8 characters")
@@ -50,27 +51,6 @@ export const borewellSchema = z.object({
   yieldLpm: z.number().min(0).max(100000).nullable().optional(),
   success: z.boolean({ error: "success (true/false) is required" }),
   language: z.string().max(10).optional(),
-  gpsAccuracyM: z.number().min(0).max(100000).nullable().optional(),
-  drillingDate: z.string().datetime().optional(),
-  // Optional explicit linkage: a field outcome may score only this prediction.
-  // Nearby location alone is not enough to establish an accountable outcome.
-  predictionId: z.string().min(1).max(40).optional(),
-});
-
-export const importBorewellCsvSchema = z.object({
-  csvText: z.string().min(1, "CSV data is required").max(1_000_000, "CSV is too large (maximum 1 MB)"),
-  dryRun: z.boolean().optional().default(true),
-});
-
-export const observationSchema = z.object({
-  type: z.enum(["WATER_LEVEL", "YIELD", "MAINTENANCE"]),
-  observedAt: z.string().datetime().optional(),
-  waterLevelFt: z.number().min(0).max(5000).nullable().optional(),
-  yieldLpm: z.number().min(0).max(100000).nullable().optional(),
-  note: z.string().max(500).optional(),
-}).refine((d) =>
-  d.waterLevelFt != null || d.yieldLpm != null || Boolean(d.note?.trim()), {
-  message: "Provide a water level, yield, or observation note",
 });
 
 // admin can change an operator's status and verified flag — never role.
@@ -86,14 +66,41 @@ export const adminLogPatchSchema = z.object({
   flagged: z.boolean().optional(),
   flagReason: z.string().max(200).optional(),
   verified: z.boolean().optional(),
-  verificationStatus: z.enum(["UNDER_REVIEW", "VERIFIED", "REJECTED"]).optional(),
-  status: z.enum(["ACTIVE", "LOW_YIELD", "DRY", "ABANDONED", "RECHARGE_CANDIDATE", "RECHARGED"]).optional(),
-}).refine((d) =>
-  d.flagged !== undefined ||
-  d.verified !== undefined ||
-  d.verificationStatus !== undefined ||
-  d.status !== undefined, {
+}).refine((d) => d.flagged !== undefined || d.verified !== undefined, {
   message: "Nothing to update",
+});
+
+// Phase 2 ingestion provenance travels in query parameters for text/csv uploads.
+export const ingestionSourceSchema = z.object({
+  sourceType: z.enum(SOURCE_TYPES),
+  sourceName: z.string().trim().min(1, "sourceName is required").max(120),
+  sourceReference: z.string().trim().max(500).optional().default(""),
+  license: z.string().trim().max(120).optional().default(""),
+  datasetName: z.string().trim().max(160).optional().default(""),
+});
+
+export const ingestionReviewSchema = z.object({
+  decision: z.enum(["approve", "reject"]),
+  reviewNote: z.string().trim().max(500).optional().default(""),
+});
+
+export const datasetAssetSchema = z.object({
+  datasetKind: z.enum(DATASET_KINDS),
+  sourceName: z.string().trim().min(1, "sourceName is required").max(160),
+  sourceReference: z.string().trim().max(500).optional().default(""),
+  license: z.string().trim().max(160).optional().default(""),
+  storageProvider: z.enum(["s3", "gcs", "azure_blob", "local", "other"]),
+  objectKey: z.string().trim().min(1, "objectKey is required").max(500),
+  mediaType: z.string().trim().min(1, "mediaType is required").max(120),
+  byteSize: z.number().int().min(0).max(10_000_000_000),
+  sha256: z.string().regex(/^[a-fA-F0-9]{64}$/, "sha256 must be a 64-character hex digest"),
+  spatialCoverage: z.string().trim().max(500).optional().default(""),
+  temporalCoverage: z.string().trim().max(200).optional().default(""),
+});
+
+export const datasetAssetReviewSchema = z.object({
+  decision: z.enum(["approve", "reject"]),
+  reviewNote: z.string().trim().max(500).optional().default(""),
 });
 
 // middleware factory: validate req.body against a schema, replacing it with the

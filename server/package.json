@@ -7,11 +7,13 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "test:predict": "node test_predict.js",
-    "test:api": "node test_api.js",
-    "backfill:domain:dry": "node backfill_domain.js",
-    "backfill:domain:apply": "node backfill_domain.js --apply",
-    "check:syntax": "node --check index.js && node --check auth.js && node --check backfill_domain.js"
+    "test": "node --test",
+    "test:phase2": "node --test test/ingestion.test.js",
+    "test:phase2:contract": "node --test test/phase2-contract.test.js",
+    "dataset:validate": "node scripts/validate-dataset.js",
+    "migrate:phase2": "node migrations/phase2-v1.js",
+    "migrate:phase2:apply": "node migrations/phase2-v1.js --apply",
+    "migrate:phase2:rollback": "node migrations/phase2-v1.js --rollback"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
