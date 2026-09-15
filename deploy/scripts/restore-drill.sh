@@ -32,6 +32,6 @@ docker run --rm \
   --env-file "$SERVER_ENV_FILE" \
   -v "$restore_root:/restore:ro" \
   "${IMAGE_PREFIX}-api:${RELEASE_VERSION}" \
-  npm run backup:restore -- "/restore${relative_backup}" 
+  node scripts/restore-backup.js "/restore${relative_backup}"
 
 echo "[phase18] restore drill PASS: latest off-site snapshot is retrievable, rig evidence is present, and the DB backup decrypts/parses without touching a database"
