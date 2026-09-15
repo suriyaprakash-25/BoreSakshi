@@ -1,5 +1,5 @@
 // featurePipeline.js — Phase 3 feature-dataset builder.
-// Produces versioned ML-ready rows while enforcing temporal leakage and Phase 8 trust controls.
+// Produces versioned ML-ready rows while enforcing temporal leakage and Phase 9 trust controls.
 import { createHash } from "node:crypto";
 import {
   FEATURE_SCHEMA_VERSION,
@@ -23,7 +23,10 @@ function isOperatorSubmission(record) {
 
 export function isTrustedBorewellEvidence(record) {
   if (!isOperatorSubmission(record)) return true;
-  return record?.verified === true && record?.flagged !== true && record?.datasetEligibility?.eligible !== false;
+  return record?.verificationStatus === "VERIFIED" &&
+    record?.verified === true &&
+    record?.flagged !== true &&
+    record?.datasetEligibility?.eligible !== false;
 }
 
 export function validateTrainingTarget(target) {
@@ -37,6 +40,7 @@ export function validateTrainingTarget(target) {
   if (target?.datasetEligible === false || target?.datasetEligibility?.eligible === false) errors.push("source record is not dataset eligible");
   if (target?.duplicateOf) errors.push("duplicate source records cannot become training targets");
   if (target?.reviewStatus && target.reviewStatus !== "approved") errors.push("staged source record is not approved");
+  if (isOperatorSubmission(target) && target?.verificationStatus !== "VERIFIED") errors.push("operator submission has not passed the Phase 9 VERIFIED lifecycle state");
   if (isOperatorSubmission(target) && target?.verified !== true) errors.push("operator submission is not verified");
   if (isOperatorSubmission(target) && target?.flagged === true) errors.push("flagged operator submission cannot become a training target");
   return { valid: errors.length === 0, errors };
@@ -149,6 +153,7 @@ export function buildFeatureDataset({
     leakagePolicy: {
       phase2EligibilityRequired: true,
       phase8VerifiedOperatorOutcomesRequired: true,
+      phase9VerifiedLifecycleRequired: true,
       targetOutcomeExcludedFromFeatures: true,
       nearbyBorewellTemporalRule: "strictly-before-target-asOf",
       dynamicLayerTemporalRule: "latest-observation-not-after-target-asOf",
