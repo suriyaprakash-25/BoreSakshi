@@ -146,8 +146,8 @@ Results on that head:
 | Frontend production build | passed |
 | Frontend production-preview smoke | passed |
 | Server production dependency audit | 0 vulnerabilities |
-| Web production dependency audit | 0 vulnerabilities |
-| Full ML suite | 36 passed; 0 failed; 2 dependency deprecation warnings |
+| Web production dependency audit | 0 production vulnerabilities |
+| Full ML suite | 29 passed; 0 failed; 2 dependency deprecation warnings |
 | Aggregate Phase 17 release gate | passed |
 
 On the same runtime head, the inherited Phase 4, 5, 6, 7, 8, 9, 10, 11 and 15 workflows also completed successfully.
