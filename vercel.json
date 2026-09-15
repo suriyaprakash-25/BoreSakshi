@@ -1,4 +1,5 @@
 {
+  "name": "boresakshi",
   "version": 2,
   "buildCommand": "cd web && npm install && npm run build",
   "outputDirectory": "web/dist",
