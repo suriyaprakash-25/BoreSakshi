@@ -2,6 +2,7 @@
 // profile; authentication itself is the HttpOnly server session cookie.
 import { createContext, useContext, useState, useCallback } from "react";
 import { getAuth, setAuth as persist, clearAuth, signout as apiSignout } from "./api.js";
+import { safeAuthState } from "./authState.js";
 
 const AuthContext = createContext(null);
 
@@ -9,7 +10,7 @@ export function AuthProvider({ children }) {
   const [auth, setAuthState] = useState(getAuth);
 
   const signIn = useCallback((data) => {
-    const safe = data?.operator ? { operator: data.operator } : null;
+    const safe = safeAuthState(data);
     if (safe) persist(safe);
     else clearAuth();
     setAuthState(safe);

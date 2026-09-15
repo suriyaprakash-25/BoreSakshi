@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test test/*.test.js",
+    "test:phase17": "node --test test/phase17-ui.test.js"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

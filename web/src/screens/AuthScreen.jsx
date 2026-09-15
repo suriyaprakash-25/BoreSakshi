@@ -5,6 +5,8 @@ import { HardHat, Phone, Lock, ArrowRight, Copy, ShieldCheck } from "lucide-reac
 import AppHeader from "../components/AppHeader.jsx";
 import { useAuth } from "../auth.jsx";
 import { signin, signup } from "../api.js";
+import { validateAuthForm } from "../authValidation.js";
+import { roleHome } from "../authState.js";
 
 export default function AuthScreen({ mode }) {
   const isSignup = mode === "signup";
@@ -26,10 +28,8 @@ export default function AuthScreen({ mode }) {
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
-    if (isSignup) {
-      if (password.length < 10) return setError("Password must be at least 10 characters.");
-      if (password !== confirmPassword) return setError("Passwords do not match.");
-    }
+    const validationError = validateAuthForm({ mode, name, phone, password, confirmPassword });
+    if (validationError) return setError(validationError);
 
     setBusy(true);
     try {
@@ -37,7 +37,7 @@ export default function AuthScreen({ mode }) {
         ? await signup({ name, phone, password, confirmPassword })
         : await signin({ phone, password });
       signIn(data); // AuthContext persists only the safe operator profile.
-      const home = data.operator?.role === "admin" ? "/admin" : "/dashboard";
+      const home = roleHome(data.operator);
       if (isSignup && data.recoveryCode) {
         setRecoveryCode(data.recoveryCode);
         setContinueTo(from || home);
