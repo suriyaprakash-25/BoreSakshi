@@ -84,11 +84,11 @@ export function scorePredictionAgainstOutcome(prediction, outcome, { now = new D
   const predictedYield = accountability?.predicted?.yieldLpm?.estimate ?? rangeSummary(prediction?.expectedYieldLpm).estimate;
   const actualYield = finite(outcome?.yieldLpm) && Number(outcome.yieldLpm) >= 0 ? Number(outcome.yieldLpm) : null;
   const yieldSignedError = predictedYield != null && actualYield != null ? predictedYield - actualYield : null;
-  const outcomeDate = outcome?.verifiedAt || outcome?.reviewedAt || now;
-  const regionKey = regionKeyFrom(outcome);
+  const outcomeDate = outcome?.verifiedAt || outcome?.reviewedAt || outcome?.outcomeDate || outcome?.closedAt || now;
+  const regionKey = outcome?.regionKey || regionKeyFrom(outcome);
 
   const actual = {
-    borewellId: outcome?.id || null,
+    borewellId: outcome?.id || outcome?.borewellId || null,
     success: actualSuccess,
     depthFt: numberOrNull(outcome?.depthFt),
     waterStrikeFt: actualStrike,
@@ -97,7 +97,7 @@ export function scorePredictionAgainstOutcome(prediction, outcome, { now = new D
     outcomeDate,
     verificationStatus: outcome?.verificationStatus || (outcome?.verified === true ? "VERIFIED" : "UNKNOWN"),
     verified: outcome?.verified === true,
-    matchDistanceKm: numberOrNull(matchDistanceKm),
+    matchDistanceKm: numberOrNull(matchDistanceKm ?? outcome?.matchDistanceKm),
     regionKey,
     placeName: String(outcome?.placeName || outcome?.village || "").trim() || null,
     district: String(outcome?.district || "").trim() || null,
@@ -142,7 +142,7 @@ export function scorePredictionAgainstOutcome(prediction, outcome, { now = new D
 }
 
 export function reopenPredictionAccountability(prediction, { now = new Date().toISOString(), reason = "Outcome trust was removed" } = {}) {
-  const accountability = prediction?.accountability || buildPredictionAccountability(prediction);
+  const accountability = normalizePredictionAccountability(prediction);
   return {
     actual: null,
     correct: null,
@@ -159,6 +159,36 @@ export function reopenPredictionAccountability(prediction, { now = new Date().to
       reopenReason: reason,
     },
   };
+}
+
+export function normalizePredictionAccountability(prediction) {
+  const base = prediction?.accountability || buildPredictionAccountability(prediction);
+  if (!prediction?.actual) return base;
+  if (base.status === "SCORED_VERIFIED" && base.actual && base.metrics) return base;
+
+  const actual = prediction.actual;
+  const syntheticOutcome = {
+    id: actual.borewellId || null,
+    borewellId: actual.borewellId || null,
+    success: actual.success === true,
+    depthFt: actual.depthFt,
+    waterStrikeFt: actual.waterStrikeFt,
+    yieldLpm: actual.yieldLpm,
+    drilledAt: actual.drilledAt || null,
+    outcomeDate: actual.outcomeDate || actual.closedAt || null,
+    verifiedAt: actual.outcomeDate || actual.closedAt || null,
+    verificationStatus: actual.verificationStatus || (actual.verified === false ? "UNKNOWN" : "VERIFIED"),
+    verified: actual.verified !== false,
+    matchDistanceKm: actual.matchDistanceKm,
+    regionKey: actual.regionKey || regionKeyFrom({ lat: prediction.lat, lng: prediction.lng }),
+    lat: prediction.lat,
+    lng: prediction.lng,
+  };
+  return scorePredictionAgainstOutcome(
+    { ...prediction, accountability: base },
+    syntheticOutcome,
+    { now: actual.closedAt || actual.outcomeDate || prediction.createdAt || new Date().toISOString(), matchDistanceKm: actual.matchDistanceKm },
+  ).accountability;
 }
 
 function calibrationReport(scored, bins = CALIBRATION_BIN_COUNT) {
@@ -239,36 +269,14 @@ function groupPerformance(predictions, keyFn) {
 export function summarizeAccountabilityLedger(predictions) {
   const normalized = (predictions || []).map((prediction) => ({
     ...prediction,
-    accountability: prediction.accountability || (
-      prediction.actual
-        ? {
-            ...buildPredictionAccountability(prediction),
-            status: "SCORED_VERIFIED",
-            actual: {
-              success: prediction.actual.success === true,
-              waterStrikeFt: numberOrNull(prediction.actual.waterStrikeFt),
-              yieldLpm: numberOrNull(prediction.actual.yieldLpm),
-              regionKey: prediction.actual.regionKey || "unknown",
-              verificationStatus: prediction.actual.verificationStatus || (prediction.actual.verified ? "VERIFIED" : "UNKNOWN"),
-            },
-            metrics: {
-              successCorrect: prediction.correct === true,
-              brier: ((clamp(Number(prediction.successProbability || 0), 0, 100) / 100) - (prediction.actual.success ? 1 : 0)) ** 2,
-              depthErrorFt: null,
-              depthAbsoluteErrorFt: null,
-              yieldErrorLpm: null,
-              yieldAbsoluteErrorLpm: null,
-            },
-          }
-        : buildPredictionAccountability(prediction)
-    ),
+    accountability: normalizePredictionAccountability(prediction),
   }));
   const overall = summaryCore(normalized);
   return {
     schemaVersion: ACCOUNTABILITY_SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
     totalPredictions: normalized.length,
-    pending: normalized.filter((prediction) => !["SCORED_VERIFIED"].includes(prediction.accountability.status)).length,
+    pending: normalized.filter((prediction) => prediction.accountability.status !== "SCORED_VERIFIED").length,
     ...overall,
     byModelVersion: groupPerformance(normalized, (prediction) => prediction.accountability.modelIdentity),
     byRegion: groupPerformance(normalized.filter((prediction) => prediction.accountability.actual), (prediction) => prediction.accountability.actual?.regionKey || "unknown"),
@@ -286,7 +294,7 @@ export function summarizeAccountabilityLedger(predictions) {
 }
 
 export function safeLedgerEntry(prediction) {
-  const accountability = prediction.accountability || buildPredictionAccountability(prediction);
+  const accountability = normalizePredictionAccountability(prediction);
   return {
     predictionId: prediction.id,
     location: {
