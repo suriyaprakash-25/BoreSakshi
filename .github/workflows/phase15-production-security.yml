@@ -12,6 +12,30 @@ on:
       - "phase-15-production-security-reliability"
 
 jobs:
+  dependency-lock-remediation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Refresh server lock within declared semver ranges
+        working-directory: server
+        run: npm audit fix --package-lock-only
+      - name: Refresh web lock within declared semver ranges
+        working-directory: web
+        run: npm audit fix --package-lock-only
+      - name: Show security-only lock changes
+        run: git diff -- server/package-lock.json web/package-lock.json
+      - name: Package refreshed lockfiles for review
+        run: tar -czf phase15-fixed-lockfiles.tgz server/package-lock.json web/package-lock.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase15-fixed-lockfiles
+          path: phase15-fixed-lockfiles.tgz
+          if-no-files-found: error
+          retention-days: 1
+
   server-security-tests:
     runs-on: ubuntu-latest
     env:
