@@ -18,7 +18,6 @@ services:
       - observability
     depends_on:
       - alertmanager
-      - blackbox
 
   alertmanager:
     image: prom/alertmanager:v0.34.0
@@ -29,18 +28,6 @@ services:
       - "${ALERTMANAGER_CONFIG_FILE:-./monitoring/alertmanager.yml.example}:/etc/alertmanager/alertmanager.yml:ro"
       - alertmanager_data:/alertmanager
     networks:
-      - observability
-
-  blackbox:
-    image: prom/blackbox-exporter:v0.28.0
-    restart: unless-stopped
-    profiles: ["observability"]
-    volumes:
-      - ./monitoring/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
-    command: ["--config.file=/etc/blackbox_exporter/config.yml"]
-    networks:
-      - internal
-      - edge
       - observability
 
   loki:
