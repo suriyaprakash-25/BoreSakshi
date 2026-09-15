@@ -1,0 +1,14 @@
+__pycache__
+.pytest_cache
+.venv
+.env
+.env.*
+!.env.example
+artifacts
+evaluations
+activations
+*.joblib
+*.pkl
+*.pyc
+.git
+.github
