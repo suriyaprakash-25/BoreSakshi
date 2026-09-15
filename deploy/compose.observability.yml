@@ -1,6 +1,6 @@
 services:
   prometheus:
-    image: prom/prometheus:v3.6.0
+    image: prom/prometheus:v3.14.0
     restart: unless-stopped
     profiles: ["observability"]
     command:
@@ -21,7 +21,7 @@ services:
       - blackbox
 
   alertmanager:
-    image: prom/alertmanager:v0.28.1
+    image: prom/alertmanager:v0.34.0
     restart: unless-stopped
     profiles: ["observability"]
     command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager"]
@@ -32,7 +32,7 @@ services:
       - observability
 
   blackbox:
-    image: prom/blackbox-exporter:v0.27.0
+    image: prom/blackbox-exporter:v0.28.0
     restart: unless-stopped
     profiles: ["observability"]
     volumes:
@@ -44,7 +44,7 @@ services:
       - observability
 
   loki:
-    image: grafana/loki:3.5.5
+    image: grafana/loki:3.7.2
     restart: unless-stopped
     profiles: ["observability"]
     command: ["-config.file=/etc/loki/local-config.yaml"]
@@ -55,7 +55,7 @@ services:
       - observability
 
   fluent-bit:
-    image: cr.fluentbit.io/fluent/fluent-bit:4.0.11
+    image: cr.fluentbit.io/fluent/fluent-bit:5.1.3
     restart: unless-stopped
     profiles: ["observability"]
     user: "0:0"
@@ -68,7 +68,7 @@ services:
       - loki
 
   grafana:
-    image: grafana/grafana:12.1.1
+    image: grafana/grafana:13.2.1
     restart: unless-stopped
     profiles: ["observability"]
     environment:
