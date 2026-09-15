@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 
+from boresakshi_ml.phase7 import attach_prediction_metadata, validate_ml_prediction_contract
 from boresakshi_ml.serving import CoverageError, ServingBundle, ServingBundleError
 
 
@@ -58,7 +59,7 @@ class BundleManager:
         feature_manifest = os.getenv("BORESAKSHI_FEATURE_MANIFEST", "").strip()
         approved = os.getenv("BORESAKSHI_PHASE6_APPROVED", "").strip().upper() == "YES"
         if not phase4_dir or not phase5_dir or not feature_manifest:
-            return cls(error="Phase 6 artifact paths are not fully configured")
+            return cls(error="Phase 7 artifact paths are not fully configured")
         try:
             bundle = ServingBundle(
                 phase4_run_dir=phase4_dir,
@@ -87,8 +88,8 @@ def create_app(manager: BundleManager | None = None) -> FastAPI:
 
     app = FastAPI(
         title="BoreSakshi ML Service",
-        version="1.0.0",
-        description="Phase 6 selected-model inference service. Live serving remains approval-gated.",
+        version="1.1.0",
+        description="Phase 7 real prediction engine. Selected-model serving remains artifact- and approval-gated.",
         lifespan=lifespan,
     )
 
@@ -119,6 +120,8 @@ def create_app(manager: BundleManager | None = None) -> FastAPI:
             "modelLoaded": True,
             "modelVersion": info["modelVersion"],
             "featureVersion": info["featureVersion"],
+            "featureManifestSha256": info["featureManifestSha256"],
+            "predictionContractVersion": "1.0.0",
         }
 
     @app.get("/ml/model-info")
@@ -126,7 +129,9 @@ def create_app(manager: BundleManager | None = None) -> FastAPI:
         active = current_manager()
         if not active.ready:
             raise HTTPException(status_code=503, detail={"code": "MODEL_NOT_READY", "message": active.error or "ML bundle unavailable"})
-        return active.bundle.model_info()
+        info = active.bundle.model_info()
+        info["predictionContractVersion"] = "1.0.0"
+        return info
 
     @app.post("/ml/predict")
     def predict(request: PredictRequest):
@@ -144,6 +149,8 @@ def create_app(manager: BundleManager | None = None) -> FastAPI:
                 nearby_borewells=[well.model_dump() for well in request.nearbyBorewells],
                 prediction_time=timestamp,
             )
+            result = attach_prediction_metadata(active.bundle, result)
+            validate_ml_prediction_contract(result)
         except CoverageError as exc:
             logger.warning(
                 "ml_prediction_rejected reason=coverage coverage=%s duration_ms=%.1f",
@@ -156,10 +163,11 @@ def create_app(manager: BundleManager | None = None) -> FastAPI:
             ) from exc
         except Exception as exc:
             logger.exception("ml_prediction_failed duration_ms=%.1f", (time.perf_counter() - started) * 1000)
-            raise HTTPException(status_code=500, detail={"code": "INFERENCE_FAILED", "message": "ML inference failed"}) from exc
+            raise HTTPException(status_code=500, detail={"code": "INFERENCE_FAILED", "message": "ML inference failed contract or runtime checks"}) from exc
         logger.info(
-            "ml_prediction_ok model=%s confidence=%s coverage=%s duration_ms=%.1f",
+            "ml_prediction_ok model=%s snapshot=%s confidence=%s coverage=%s duration_ms=%.1f",
             result["modelVersion"],
+            result["featureSnapshotRef"],
             result["confidence"],
             result["featureCoverage"]["coveragePct"],
             (time.perf_counter() - started) * 1000,

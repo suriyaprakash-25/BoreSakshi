@@ -19,6 +19,14 @@ const nearby = [
   },
 ];
 
+const snapshot = {
+  ref: "fsnap:" + "a".repeat(64),
+  datasetVersion: "geo-v1",
+  featureVersion: "geo-v1:features-1.0.0",
+  featureManifestSha256: "b".repeat(64),
+  predictionAsOf: "2026-09-15T00:00:00Z",
+};
+
 test("real ML response maps to the legacy frontend contract additively", async () => {
   const client = {
     predict: async () => ({
@@ -28,6 +36,9 @@ test("real ML response maps to the legacy frontend contract additively", async (
       confidence: "High",
       modelVersion: "phase4-real-v1@phase5-real-v1",
       featureVersion: "geo-v1:features-1.0.0",
+      predictionContractVersion: "1.0.0",
+      featureSnapshotRef: snapshot.ref,
+      featureSnapshot: snapshot,
       explanations: [
         { feature: "geologyFormation", label: "Geological formation", impact: 9.4, method: "single_feature_ablation_to_pipeline_imputation" },
         { feature: "nearbySuccessRate", label: "Nearby success rate", impact: 4.2, method: "single_feature_ablation_to_pipeline_imputation" },
@@ -49,6 +60,8 @@ test("real ML response maps to the legacy frontend contract additively", async (
   assert.deepEqual(result.expectedYieldLpm, [39, 65]);
   assert.equal(result.rockType, "Fractured gneiss");
   assert.equal(result.modelVersion, "phase4-real-v1@phase5-real-v1");
+  assert.equal(result.featureSnapshotRef, snapshot.ref);
+  assert.equal(result.predictionContractVersion, "1.0.0");
   assert.equal(result.factors.length, 2);
   assert.equal(result.confidenceReason.modelCoveragePct, 92);
 });
@@ -66,6 +79,7 @@ test("ML failure never masquerades heuristic fallback as ML", async () => {
   assert.equal(result.isMock, true);
   assert.equal(result.modelAvailable, false);
   assert.equal(result.modelVersion, null);
+  assert.equal(result.featureSnapshotRef, null);
   assert.match(result.coverageWarning, /heuristic fallback/i);
   assert.match(result.basis, /ML prediction is unavailable/i);
   assert.match(result.fallbackReason, /ML_NETWORK_ERROR/);
