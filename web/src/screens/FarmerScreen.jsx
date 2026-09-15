@@ -3,6 +3,7 @@ import MapView from "../components/MapView.jsx";
 import PredictionPanel from "../components/PredictionPanel.jsx";
 import AppHeader from "../components/AppHeader.jsx";
 import { getPrediction, getBorewells, getLedger } from "../api.js";
+import { mapPickFromGeolocation, normalizeMapPick } from "../mapInteraction.js";
 import toast from "react-hot-toast";
 
 const DEFAULT_CENTER = [11.36, 77.8]; // Namakkal / Tiruchengode belt
@@ -15,20 +16,24 @@ export default function FarmerScreen() {
   const [borewells, setBorewells] = useState([]);
   const [ledger, setLedger] = useState(null);
 
-  // load verified wells + accuracy ledger on mount
   useEffect(() => {
     getBorewells().then(setBorewells).catch(() => {});
     getLedger().then(setLedger).catch(() => {});
   }, []);
 
   async function handlePick(lat, lng) {
-    setSelected({ lat, lng });
+    let point;
+    try { point = normalizeMapPick(lat, lng); }
+    catch {
+      setStatus("error");
+      return;
+    }
+    setSelected(point);
     setStatus("loading");
     try {
-      const data = await getPrediction(lat, lng);
+      const data = await getPrediction(point.lat, point.lng);
       setPrediction(data);
       setStatus("result");
-      // refresh ledger count (a new prediction was recorded)
       getLedger().then(setLedger).catch(() => {});
     } catch {
       setStatus("error");
@@ -39,10 +44,13 @@ export default function FarmerScreen() {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
-          setMapCenter([lat, lng]);
-          handlePick(lat, lng);
+          try {
+            const point = mapPickFromGeolocation(pos);
+            setMapCenter([point.lat, point.lng]);
+            handlePick(point.lat, point.lng);
+          } catch (err) {
+            toast.error("Invalid current location: " + err.message);
+          }
         },
         (err) => {
           toast.error("Could not get current location: " + err.message);
