@@ -1,11 +1,30 @@
 // middleware.js — cross-cutting API middleware: async error capture, rate
 // limiting, clean JSON errors, and production-safe error handling.
 import rateLimit from "express-rate-limit";
+import {
+  createCsrfOriginGuard,
+  enforceProductionHttps,
+  requestId,
+  securityHeaders,
+} from "./security.js";
 
 export const asyncHandler = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
 const msg = (m, code = "RATE_LIMITED") => ({ error: m, code });
+
+function chain(...middlewares) {
+  return (req, res, next) => {
+    let index = 0;
+    const run = (error) => {
+      if (error) return next(error);
+      if (res.headersSent || index >= middlewares.length) return index >= middlewares.length ? next() : undefined;
+      const middleware = middlewares[index++];
+      return middleware(req, res, run);
+    };
+    return run();
+  };
+}
 
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -15,13 +34,24 @@ export const apiLimiter = rateLimit({
   message: msg("Too many requests. Please wait and try again."),
 });
 
-export const authLimiter = rateLimit({
+const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: Number(process.env.AUTH_RATE_LIMIT || 30),
   standardHeaders: true,
   legacyHeaders: false,
   message: msg("Too many authentication attempts from this device. Please wait and try again."),
 });
+
+// index.js already mounts `authLimiter` on signup/signin before the Phase 8+
+// stacked router. Keep that call site unchanged, but make the middleware itself
+// enforce Phase 15 request IDs, headers, HTTPS and same-origin write protection.
+export const authLimiter = chain(
+  requestId,
+  securityHeaders,
+  enforceProductionHttps,
+  createCsrfOriginGuard(),
+  authRateLimiter,
+);
 
 const digits = (p) => String(p || "").replace(/[^\d]/g, "");
 export const signinBruteLimiter = rateLimit({
