@@ -9,6 +9,13 @@ import {
   resolveEvidenceTokens,
   storeEvidenceUpload,
 } from "./rigEvidence.js";
+import { createPhase9Router } from "./phase9Routes.js";
+import {
+  operatorReviewRequestSchema,
+  reviewDecisionSchema,
+  reviewReopenSchema,
+  reviewStartSchema,
+} from "./phase9Validation.js";
 
 const rawEvidence = express.raw({ type: () => true, limit: process.env.RIG_MEDIA_UPLOAD_LIMIT || "50mb" });
 
@@ -22,8 +29,6 @@ async function closeNearbyPredictions({ db, record, distanceKm, NEAR_KM, now }) 
   let scored = 0;
   for (const prediction of openPreds) {
     const predictionAtMs = Date.parse(prediction.createdAt || "");
-    // Accountability requires the prediction to pre-date the observed outcome.
-    // If either timestamp is unverifiable, skip rather than manufacture a score.
     if (!Number.isFinite(drilledAtMs) || !Number.isFinite(predictionAtMs) || predictionAtMs > drilledAtMs) continue;
     if (distanceKm({ lat: record.lat, lng: record.lng }, { lat: prediction.lat, lng: prediction.lng }) > NEAR_KM) continue;
     const predictedSuccess = prediction.successProbability >= 50;
@@ -55,6 +60,23 @@ async function reopenPredictionsForRecord(db, borewellId) {
   return reopened;
 }
 
+async function appendRigVerificationAudit(db, { record, action, actor, details = {} }) {
+  if (typeof db.addIngestionAudit !== "function") return null;
+  const event = {
+    id: nanoid(14),
+    batchId: null,
+    recordId: record.id,
+    scopeType: "rig_verification",
+    scopeId: record.id,
+    action,
+    actor: { id: actor.id, name: actor.name, role: actor.role || "admin" },
+    details,
+    createdAt: new Date().toISOString(),
+  };
+  await db.addIngestionAudit(event);
+  return event;
+}
+
 async function findBorewell(db, id) {
   return (await db.getAllBorewells()).find((item) => item.id === id) || null;
 }
@@ -70,6 +92,21 @@ export function createPhase8Router({
   NEAR_KM,
 }) {
   const router = express.Router();
+
+  // Phase 9 is mounted inside the Phase 8 router so the stacked branch remains
+  // additive and the existing index.js wiring does not need to be rewritten.
+  router.use(createPhase9Router({
+    db,
+    requireAuth,
+    requireAdmin,
+    validate,
+    reviewStartSchema,
+    reviewDecisionSchema,
+    reviewReopenSchema,
+    operatorReviewRequestSchema,
+    distanceKm,
+    NEAR_KM,
+  }));
 
   router.get("/api/operator/evidence/config", requireAuth, (_req, res) => {
     res.json({
@@ -122,9 +159,6 @@ export function createPhase8Router({
     }
   });
 
-  // Phase 8 authoritative operator submission route. Because this router is mounted
-  // before the legacy route, successful requests end here; the legacy handler stays
-  // untouched as a compatibility reference while Phase 9 evolves verification.
   router.post("/api/borewells", requireAuth, validate(borewellSchema), async (req, res, next) => {
     try {
       const evidence = await resolveEvidenceTokens(req.body.evidenceTokens, req.operator.id);
@@ -153,9 +187,6 @@ export function createPhase8Router({
         });
       }
 
-      // Important trust boundary: submission does NOT close ledger predictions.
-      // Existing admin verification is the temporary Phase 8 review action; Phase 9
-      // replaces it with the full formal review lifecycle.
       res.status(201).json({
         ...record,
         scoredPredictions: 0,
@@ -169,8 +200,6 @@ export function createPhase8Router({
     }
   });
 
-  // Public map/data exposes trusted outcomes only. Operators/admins still see their
-  // pending submissions through /api/borewells/mine and /api/admin/logs.
   router.get("/api/borewells", async (_req, res, next) => {
     try {
       const records = await db.getBorewells();
@@ -196,8 +225,9 @@ export function createPhase8Router({
     } catch (error) { next(error); }
   });
 
-  // Phase 8 keeps the current admin Verify button but makes the operator trust
-  // boundary real without mutating Phase 2 imported-data review semantics.
+  // Phase 9 removes the old direct operator-record Verify/Unverify bypass. Imported
+  // Phase 2 records keep the legacy verified toggle; operator records must use the
+  // formal /api/admin/review/... lifecycle above.
   router.patch("/api/admin/logs/:id", requireAuth, requireAdmin, validate(adminLogPatchSchema), async (req, res, next) => {
     try {
       const existing = await findBorewell(db, req.params.id);
@@ -206,31 +236,48 @@ export function createPhase8Router({
       const patch = { ...req.body };
       const operatorSubmission = isOperatorSubmission(existing);
 
+      if (operatorSubmission && typeof patch.verified === "boolean") {
+        return res.status(409).json({ error: "Operator outcomes must be reviewed through the Phase 9 verification workflow" });
+      }
+
       if (patch.flagged === true) {
         patch.flagReason = (req.body.flagReason || "").trim();
         patch.flaggedAt = now;
         patch.flaggedBy = req.operator.name;
-        if (operatorSubmission) patch.datasetEligibility = { eligible: false, status: "flagged_for_review" };
+        if (operatorSubmission) {
+          patch.verified = false;
+          patch.verifiedAt = null;
+          patch.verifiedBy = null;
+          patch.verificationStatus = "UNDER_REVIEW";
+          patch.datasetEligibility = { eligible: false, status: "flagged_for_review" };
+          patch.reviewReopenedAt = now;
+          patch.reviewReopenedBy = { id: req.operator.id, name: req.operator.name };
+          patch.reviewReopenReason = "Manual admin flag requires re-review";
+        }
       } else if (patch.flagged === false) {
         patch.flagReason = "";
         patch.flaggedAt = null;
         patch.flaggedBy = null;
+        // Clearing a Phase 9 flag never promotes the record automatically; the
+        // review lifecycle must still issue a fresh VERIFIED decision.
+        if (operatorSubmission && existing.verificationStatus !== "VERIFIED") {
+          patch.datasetEligibility = { eligible: false, status: "under_verification_review" };
+        }
       }
 
-      if (typeof patch.verified === "boolean") {
+      if (!operatorSubmission && typeof patch.verified === "boolean") {
         Object.assign(patch, buildVerificationPatch({
           record: existing,
           verified: patch.verified,
           adminName: req.operator.name,
           now,
         }));
-      } else if (operatorSubmission && patch.flagged === false && existing.verified === true) {
-        patch.datasetEligibility = { eligible: true, status: "verified_operator_outcome" };
       }
 
       let updated = await db.updateBorewell(existing.id, patch);
       const wasTrustedAndScored = Boolean(existing.ledgerScoredAt);
       const trustedNow = isTrustedOutcome(updated);
+      let ledgerReopened = 0;
 
       if (trustedNow && !wasTrustedAndScored) {
         const scored = await closeNearbyPredictions({ db, record: updated, distanceKm, NEAR_KM, now });
@@ -239,12 +286,28 @@ export function createPhase8Router({
           ledgerScoredPredictions: scored,
         });
       } else if (!trustedNow && wasTrustedAndScored) {
-        const reopened = await reopenPredictionsForRecord(db, updated.id);
+        ledgerReopened = await reopenPredictionsForRecord(db, updated.id);
         updated = await db.updateBorewell(updated.id, {
           ledgerScoredAt: null,
           ledgerScoredPredictions: 0,
           ledgerReopenedAt: now,
-          ledgerReopenedPredictions: reopened,
+          ledgerReopenedPredictions: ledgerReopened,
+        });
+      }
+
+      if (operatorSubmission && typeof patch.flagged === "boolean") {
+        await appendRigVerificationAudit(db, {
+          record: existing,
+          action: patch.flagged ? "verification_flagged_for_review" : "verification_flag_cleared",
+          actor: req.operator,
+          details: {
+            fromStatus: existing.verificationStatus || "SUBMITTED",
+            toStatus: updated.verificationStatus || existing.verificationStatus || "SUBMITTED",
+            reason: patch.flagged ? patch.flagReason : "",
+            trustedBefore: isTrustedOutcome(existing),
+            trustedAfter: isTrustedOutcome(updated),
+            reopenedPredictions: ledgerReopened,
+          },
         });
       }
 

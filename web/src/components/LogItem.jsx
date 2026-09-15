@@ -1,16 +1,27 @@
 // LogItem.jsx — one log card used by operator/admin views.
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import {
   MapPin, Droplets, DropletOff, Ruler, Waves, Layers, BadgeCheck, Flag, FlagOff,
-  Clock3, Camera, Video, LocateFixed, ExternalLink,
+  Clock3, Camera, Video, LocateFixed, ExternalLink, ShieldCheck, XCircle, RotateCcw,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { placeLabel, fmtDate } from "../metrics.js";
 import { rigEvidenceUrl } from "../api.js";
 
-export default function LogItem({ log, showOperator = false, adminActions = null }) {
+function statusMeta(log) {
+  const status = log.verificationStatus || (log.verified ? "VERIFIED" : "SUBMITTED");
+  if (status === "VERIFIED") return { label: "Verified", icon: BadgeCheck, className: "verified" };
+  if (status === "REJECTED") return { label: "Rejected", icon: XCircle, className: "flagged" };
+  if (status === "UNDER_REVIEW") return { label: "Under review", icon: ShieldCheck, className: "" };
+  return { label: "Submitted", icon: Clock3, className: "" };
+}
+
+export default function LogItem({ log, showOperator = false, adminActions = null, operatorActions = null }) {
   const [flagging, setFlagging] = useState(false);
   const [reason, setReason] = useState("");
+  const [appealing, setAppealing] = useState(false);
+  const [appealNote, setAppealNote] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function run(fn, successMsg) {
@@ -27,6 +38,9 @@ export default function LogItem({ log, showOperator = false, adminActions = null
 
   const photoCount = log.evidenceSummary?.photoCount ?? (log.evidence || []).filter((item) => item.kind === "photo").length;
   const videoCount = log.evidenceSummary?.videoCount ?? (log.evidence || []).filter((item) => item.kind === "video").length;
+  const operatorSubmission = Boolean(log.rigSubmissionSchemaVersion) || log.provenance?.sourceType === "operator";
+  const state = statusMeta(log);
+  const StateIcon = state.icon;
 
   return (
     <li className={`card log-card ${log.flagged ? "is-flagged" : ""}`}>
@@ -34,15 +48,9 @@ export default function LogItem({ log, showOperator = false, adminActions = null
         <div className="log-card-main">
           <div className="log-card-place">
             <MapPin size={15} strokeWidth={2.2} /> {placeLabel(log)}
-            {log.verified ? (
-              <span className="log-badge verified" title="Verified log">
-                <BadgeCheck size={13} strokeWidth={2.4} /> Verified
-              </span>
-            ) : (
-              <span className="log-badge" title="Submitted and awaiting verification">
-                <Clock3 size={13} strokeWidth={2.4} /> Pending verification
-              </span>
-            )}
+            <span className={`log-badge ${state.className}`} title={`Verification status: ${state.label}`}>
+              <StateIcon size={13} strokeWidth={2.4} /> {state.label}
+            </span>
           </div>
           <div className="log-card-sub">
             {fmtDate(log.drilledAt || log.createdAt)}
@@ -98,11 +106,35 @@ export default function LogItem({ log, showOperator = false, adminActions = null
         </div>
       )}
 
+      {log.reviewDecisionReason && (
+        <div className="log-flag-note">
+          <ShieldCheck size={13} /> Review: {log.reviewDecisionReason}
+        </div>
+      )}
+
       {log.flagged && log.flagReason && (
         <div className="log-flag-note">
           <Flag size={13} strokeWidth={2.2} /> {log.flagReason}
           {log.flaggedBy ? <span className="log-flag-by"> — flagged by {log.flaggedBy}</span> : null}
         </div>
+      )}
+
+      {operatorActions && log.verificationStatus === "REJECTED" && (
+        appealing ? (
+          <div className="log-actions log-flag-form">
+            <input className="op-input log-flag-input" value={appealNote} onChange={(e) => setAppealNote(e.target.value)}
+              placeholder="Explain why this outcome should be reviewed again…" />
+            <button className="btn btn-primary btn-sm" disabled={busy || appealNote.trim().length < 10}
+              onClick={() => run(async () => { await operatorActions.requestReview(log.id, appealNote.trim()); setAppealing(false); setAppealNote(""); }, "Review requested")}>
+              <RotateCcw size={14} /> Request review
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setAppealing(false)}>Cancel</button>
+          </div>
+        ) : (
+          <div className="log-actions">
+            <button className="btn btn-ghost btn-sm" onClick={() => setAppealing(true)}><RotateCcw size={14} /> Request re-review</button>
+          </div>
+        )
       )}
 
       {adminActions && (
@@ -120,7 +152,7 @@ export default function LogItem({ log, showOperator = false, adminActions = null
           <div className="log-actions">
             {log.flagged ? (
               <button className="btn btn-ghost btn-sm" disabled={busy}
-                onClick={() => run(() => adminActions.clearFlag(log.id), "Flag cleared")}>
+                onClick={() => run(() => adminActions.clearFlag(log.id), "Flag cleared — review still required")}>
                 <FlagOff size={14} strokeWidth={2.2} /> Clear flag
               </button>
             ) : (
@@ -128,10 +160,17 @@ export default function LogItem({ log, showOperator = false, adminActions = null
                 <Flag size={14} strokeWidth={2.2} /> Flag
               </button>
             )}
-            <button className={`btn btn-ghost btn-sm ${log.verified ? "is-on" : ""}`} disabled={busy}
-              onClick={() => run(() => adminActions.setLogVerified(log.id, !log.verified), log.verified ? "Log moved back to pending" : "Log verified — ledger eligibility updated")}>
-              <BadgeCheck size={14} strokeWidth={2.2} /> {log.verified ? "Unverify" : "Verify"}
-            </button>
+
+            {operatorSubmission ? (
+              <Link className="btn btn-primary btn-sm" to={`/admin/review?record=${encodeURIComponent(log.id)}`}>
+                <ShieldCheck size={14} /> Review workflow
+              </Link>
+            ) : (
+              <button className={`btn btn-ghost btn-sm ${log.verified ? "is-on" : ""}`} disabled={busy}
+                onClick={() => run(() => adminActions.setLogVerified(log.id, !log.verified), log.verified ? "Imported record unverified" : "Imported record verified")}>
+                <BadgeCheck size={14} strokeWidth={2.2} /> {log.verified ? "Unverify" : "Verify"}
+              </button>
+            )}
           </div>
         )
       )}

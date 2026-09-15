@@ -1,10 +1,6 @@
 // AppHeader.jsx — one header for every screen.
-// Brand (home) + a segmented nav with a clear active state, plus an optional
-// right-hand slot for screen-specific controls (farmer metrics, operator lang).
-// Operator-only tabs (Dashboard / Log / History) appear once signed in; Map and
-// Ledger are always public.
 import { NavLink, Link } from "react-router-dom";
-import { Droplets, LayoutDashboard, MapPin, ClipboardList, Scale, History, Users, Flag } from "lucide-react";
+import { Droplets, LayoutDashboard, MapPin, ClipboardList, Scale, History, Users, Flag, ShieldCheck } from "lucide-react";
 import AuthBadge from "./AuthBadge.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
 import { useAuth } from "../auth.jsx";
@@ -18,9 +14,9 @@ const OPERATOR_TABS = [
   { to: "/log", label: "Log", icon: ClipboardList },
   { to: "/history", label: "History", icon: History },
 ];
-// admins get a distinct nav instead of the rig-operator one
 const ADMIN_TABS = [
   { to: "/admin", end: true, label: "Overview", icon: LayoutDashboard },
+  { to: "/admin/review", label: "Review", icon: ShieldCheck },
   { to: "/admin/operators", label: "Operators", icon: Users },
   { to: "/admin/logs", label: "Logs", icon: ClipboardList },
   { to: "/admin/flagged", label: "Flagged", icon: Flag },
@@ -29,8 +25,6 @@ const ADMIN_TABS = [
 
 export default function AppHeader({ subtitle = "Know before you drill", children }) {
   const { operator } = useAuth();
-
-  // admin → admin nav; operator → Dashboard·Map·Log·Ledger·History; anon → Map·Ledger
   const tabs = operator?.role === "admin"
     ? ADMIN_TABS
     : operator
@@ -40,19 +34,19 @@ export default function AppHeader({ subtitle = "Know before you drill", children
 
   return (
     <header className="topbar">
-      <Link 
-        to={homePath} 
-        className="brand" 
+      <Link
+        to={homePath}
+        className="brand"
         aria-label="BoreSakshi home"
-        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
       >
         <span className="brand-mark">
-          <img src="/logo.png" alt="BoreSakshi Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', borderRadius: 'inherit', transform: 'scale(2.5)' }} />
+          <img src="/logo.png" alt="BoreSakshi Logo" style={{ width: "100%", height: "100%", objectFit: "contain", objectPosition: "center", borderRadius: "inherit", transform: "scale(2.5)" }} />
         </span>
         <span className="brand-text">
           <span className="brand-name">BoreSakshi</span>
           <span className="brand-tag">{subtitle}</span>
-        </span> 
+        </span>
       </Link>
 
       <nav className="nav" aria-label="Primary">

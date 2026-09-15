@@ -1,0 +1,58 @@
+name: Phase 9 Verification and Data Trust
+
+on:
+  pull_request:
+    paths:
+      - "server/**"
+      - "web/**"
+      - "docs/phase-9-*.md"
+      - ".github/workflows/phase9-verification.yml"
+  push:
+    branches:
+      - "phase-9-verification-data-trust"
+
+jobs:
+  server-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: server/package-lock.json
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+      - name: Check server syntax
+        run: |
+          node --check server/verification.js
+          node --check server/phase9Routes.js
+          node --check server/phase9Validation.js
+          node --check server/phase8Routes.js
+          node --check server/featurePipeline.js
+      - name: Run Phase 9 tests
+        working-directory: server
+        run: npm run test:phase9
+      - name: Run Phase 8 regression tests
+        working-directory: server
+        run: npm run test:phase8
+      - name: Run Phase 7 regression tests
+        working-directory: server
+        run: npm run test:phase7
+
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+      - name: Build web app
+        working-directory: web
+        run: npm run build

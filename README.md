@@ -17,7 +17,7 @@ boresakshi/
 Farmer UI
    ↓
 Node /api/predict
-   ↓ verified/unflagged/eligible wells only
+   ↓ Phase 9 VERIFIED / unflagged / eligible wells only
 Python /ml/predict
    ↓
 Live checksum-verified geospatial feature extraction
@@ -33,7 +33,7 @@ Node contract validation + persistence/accountability ledger
 
 Every accepted ML prediction carries a model version, feature version, prediction timestamp, uncertainty, explanations, coverage metadata and an immutable `featureSnapshotRef`. If the Python service is unavailable or returns an invalid/insufficient-coverage response, Node returns the deterministic heuristic **only as an explicitly labelled `heuristic_fallback`**. It is never presented as ML.
 
-## Rig-operator outcome path
+## Rig-operator verification path
 
 ```text
 Authenticated operator
@@ -44,16 +44,21 @@ Depth / strike / yield + geological layers
    ↓
 Photo evidence (+ optional video)
    ↓
-SUBMITTED / unverified / dataset-ineligible
+SUBMITTED / untrusted
    ↓
-Admin review gate
+UNDER_REVIEW
    ↓
-Verified + unflagged + eligible
+Deterministic review signals + human evidence review
    ↓
-Public data / ML evidence / future training / accountability ledger
+VERIFIED  or  REJECTED
+   ↓
+Only VERIFIED + unflagged + eligible outcomes become
+public data / ML evidence / future training / ledger truth
 ```
 
-Phase 8 intentionally prevents a raw operator submission from becoming trusted groundwater evidence before verification.
+Phase 8 provides structured evidence-backed field collection. Phase 9 provides the formal human verification lifecycle, deterministic suspicious-data review, append-only review audit and server-computed operator trust profile.
+
+The Phase 9 trust/risk scores are operational review aids, not groundwater-model probabilities and not substitutes for Phase 5 scientific ML validation.
 
 ## Run locally
 
@@ -88,6 +93,8 @@ npm start        # http://localhost:4000
 
 Phase 8 evidence is stored under `RIG_MEDIA_DIR`. Production deployment must use durable/private storage; the local default is for development and application-contract validation.
 
+Verification review is available to admins at `/admin/review`. Rig operators see their server-computed Phase 9 trust profile on the dashboard and can request re-review for rejected submissions from History.
+
 **3) Web**
 
 ```bash
@@ -105,11 +112,11 @@ npm run dev      # http://localhost:5173
 - [x] Phase 6 — Python ML service + Node orchestration with explicit fallback controls
 - [x] Phase 7 — real prediction-engine contract, immutable feature snapshots and activation preflight
 - [x] Phase 8 — authenticated structured rig-operator data collection + evidence + untrusted-by-default gate
-- [ ] Phase 9 — verification and data trust
+- [x] Phase 9 — formal verification lifecycle + suspicious-data review + operator/data trust + append-only audit
 - [ ] Phase 10 — continuous learning with human-reviewed promotion
 - [ ] Phase 11 — strengthened prediction accountability ledger
 - [ ] Phase 15 — production security and reliability
 - [ ] Phase 17 — full testing
 - [ ] Phase 18 — deployment and DevOps
 
-Phase 8 software is complete when its CI/review gate passes. Phase 9 remains responsible for the full verification state machine and production trust model; Phase 15 must remediate dependency/security findings before launch; Phase 18 must provide durable evidence storage and production deployment infrastructure.
+Phase 10 may consume only Phase 9 VERIFIED outcomes and must retain human/scientific promotion gates. Phase 15 must remediate dependency/security findings before launch; Phase 18 must provide durable evidence storage, backups and production deployment infrastructure.

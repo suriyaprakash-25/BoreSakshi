@@ -76,15 +76,14 @@ export function buildOperatorBorewellRecord({ id, body, operator, evidence, subm
 }
 
 export function buildVerificationPatch({ record = null, verified, adminName, now }) {
-  // Phase 8's pending/trusted eligibility transition applies only to operator-origin
-  // submissions. Government/imported Phase 2 records keep their established
-  // eligibility/review semantics when an admin toggles the existing verified flag.
   if (!isOperatorSubmission(record)) {
     return verified
       ? { verified: true, verifiedAt: now, verifiedBy: adminName }
       : { verified: false, verifiedAt: null, verifiedBy: null };
   }
 
+  // Retained only for Phase 8 compatibility tests/history. Phase 9 operator records
+  // are no longer allowed to call this through the admin patch route.
   if (verified) {
     return {
       verified: true,
@@ -104,5 +103,10 @@ export function buildVerificationPatch({ record = null, verified, adminName, now
 }
 
 export function isTrustedOutcome(record) {
-  return record?.verified === true && record?.flagged !== true && record?.datasetEligibility?.eligible !== false;
+  const baseTrust = record?.verified === true && record?.flagged !== true && record?.datasetEligibility?.eligible !== false;
+  if (!baseTrust) return false;
+  // Phase 9 operator data must also have passed the explicit verification lifecycle.
+  // Imported/government records preserve their established Phase 2 trust semantics.
+  if (isOperatorSubmission(record)) return record?.verificationStatus === "VERIFIED";
+  return true;
 }

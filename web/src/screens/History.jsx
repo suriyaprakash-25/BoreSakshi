@@ -1,4 +1,4 @@
-// History.jsx — the operator's full submission history.
+// History.jsx — the operator's full submission and verification history.
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, Inbox, Loader2 } from "lucide-react";
@@ -9,11 +9,13 @@ import { useOperatorData } from "../operatorData.jsx";
 import { successRate, filterLogs, trustedOutcomeLogs } from "../metrics.js";
 
 export default function History() {
-  const { logs, loading } = useOperatorData();
+  const { logs, loading, requestReview } = useOperatorData();
   const [query, setQuery] = useState("");
   const [outcome, setOutcome] = useState("all");
 
   const verified = trustedOutcomeLogs(logs);
+  const rejected = logs.filter((log) => log.verificationStatus === "REJECTED").length;
+  const inReview = logs.filter((log) => log.verificationStatus === "UNDER_REVIEW").length;
   const rate = successRate(logs);
   const shown = useMemo(() => filterLogs(logs, { query, outcome }), [logs, query, outcome]);
 
@@ -25,6 +27,8 @@ export default function History() {
           <h1>Submission history</h1>
           <p className="hist-summary">
             <strong>{logs.length}</strong> submission{logs.length === 1 ? "" : "s"} · <strong>{verified.length}</strong> verified
+            {inReview > 0 && <> · <strong>{inReview}</strong> under review</>}
+            {rejected > 0 && <> · <strong>{rejected}</strong> rejected</>}
             {rate != null && <> · <strong>{rate}%</strong> verified water-strike rate</>}
           </p>
         </header>
@@ -46,7 +50,7 @@ export default function History() {
           </div>
         ) : (
           <ul className="hist-list">
-            {shown.map((l) => <LogItem key={l.id} log={l} />)}
+            {shown.map((log) => <LogItem key={log.id} log={log} operatorActions={{ requestReview }} />)}
           </ul>
         )}
       </div>

@@ -16,55 +16,51 @@ import OperatorDetail from "./screens/admin/OperatorDetail.jsx";
 import FlaggedLogs from "./screens/admin/FlaggedLogs.jsx";
 import AllLogs from "./screens/admin/AllLogs.jsx";
 import AdminMap from "./screens/admin/AdminMap.jsx";
+import ReviewQueue from "./screens/admin/ReviewQueue.jsx";
 import RequireOperator from "./components/RequireOperator.jsx";
 import RequireAdmin from "./components/RequireAdmin.jsx";
 
-// One app, several audiences:
-//   /          landing page
-//   /map       farmer prediction map (OPEN — no login)
-//   /ledger    public accountability ledger                 /signin /signup  auth
-//   /dashboard /log /history   operator-only (RequireOperator)
-//   /admin/*   admin-only (RequireAdmin) — distinct nav, platform oversight
 export default function App() {
   return (
     <>
-      <Toaster 
-        position="bottom-right" 
-        toastOptions={{ 
-          style: { 
-            background: 'var(--card-glass)', 
-            color: 'var(--ink)', 
-            backdropFilter: 'blur(10px)', 
-            border: '1px solid var(--line)' 
-          } 
-        }} 
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          style: {
+            background: "var(--card-glass)",
+            color: "var(--ink)",
+            backdropFilter: "blur(10px)",
+            border: "1px solid var(--line)",
+          },
+        }}
       />
       <AuthProvider>
-      <OperatorDataProvider>
-        <AdminDataProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<LandingScreen />} />
-              <Route path="/map" element={<FarmerScreen />} />
-              <Route path="/ledger" element={<LedgerScreen />} />
-              <Route path="/signin" element={<AuthScreen mode="signin" />} />
-              <Route path="/signup" element={<AuthScreen mode="signup" />} />
+        <OperatorDataProvider>
+          <AdminDataProvider>
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<LandingScreen />} />
+                <Route path="/map" element={<FarmerScreen />} />
+                <Route path="/ledger" element={<LedgerScreen />} />
+                <Route path="/signin" element={<AuthScreen mode="signin" />} />
+                <Route path="/signup" element={<AuthScreen mode="signup" />} />
 
-              <Route path="/dashboard" element={<RequireOperator><Dashboard /></RequireOperator>} />
-              <Route path="/log" element={<RequireOperator><OperatorLog /></RequireOperator>} />
-              <Route path="/history" element={<RequireOperator><History /></RequireOperator>} />
+                <Route path="/dashboard" element={<RequireOperator><Dashboard /></RequireOperator>} />
+                <Route path="/log" element={<RequireOperator><OperatorLog /></RequireOperator>} />
+                <Route path="/history" element={<RequireOperator><History /></RequireOperator>} />
 
-              <Route path="/admin" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
-              <Route path="/admin/operators" element={<RequireAdmin><OperatorsList /></RequireAdmin>} />
-              <Route path="/admin/operators/:id" element={<RequireAdmin><OperatorDetail /></RequireAdmin>} />
-              <Route path="/admin/logs" element={<RequireAdmin><AllLogs /></RequireAdmin>} />
-              <Route path="/admin/flagged" element={<RequireAdmin><FlaggedLogs /></RequireAdmin>} />
-              <Route path="/admin/map" element={<RequireAdmin><AdminMap /></RequireAdmin>} />
-            </Routes>
-          </BrowserRouter>
-        </AdminDataProvider>
-      </OperatorDataProvider>
-    </AuthProvider>
+                <Route path="/admin" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
+                <Route path="/admin/review" element={<RequireAdmin><ReviewQueue /></RequireAdmin>} />
+                <Route path="/admin/operators" element={<RequireAdmin><OperatorsList /></RequireAdmin>} />
+                <Route path="/admin/operators/:id" element={<RequireAdmin><OperatorDetail /></RequireAdmin>} />
+                <Route path="/admin/logs" element={<RequireAdmin><AllLogs /></RequireAdmin>} />
+                <Route path="/admin/flagged" element={<RequireAdmin><FlaggedLogs /></RequireAdmin>} />
+                <Route path="/admin/map" element={<RequireAdmin><AdminMap /></RequireAdmin>} />
+              </Routes>
+            </BrowserRouter>
+          </AdminDataProvider>
+        </OperatorDataProvider>
+      </AuthProvider>
     </>
   );
 }
