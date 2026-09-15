@@ -1,5 +1,5 @@
-// api.js — all backend calls in one place.
-const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
+const isProd = import.meta.env.MODE === "production";
+const API = import.meta.env.VITE_API_URL || (isProd ? "" : "http://localhost:4000");
 
 const AUTH_KEY = "boresakshi_auth";
 

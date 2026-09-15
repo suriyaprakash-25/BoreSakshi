@@ -659,16 +659,18 @@ app.post("/api/admin/ingestion/batches/:id/publish", ...admin, asyncHandler(asyn
 app.use(notFound);
 app.use(errorHandler);
 
-connectDB()
-  .then(() => {
-    app.listen(PORT, () => console.log(`BoreSakshi API running on http://localhost:${PORT}`));
-  })
-  .catch((err) => {
-    console.error("Could not connect to MongoDB at", process.env.MONGODB_URI || "mongodb://localhost:27017/");
-    console.error("Is MongoDB running? Start it (or open MongoDB Compass) and try again.");
-    console.error(err.message);
-    process.exit(1);
-  });
+connectDB().catch((err) => {
+  console.error("Could not connect to MongoDB at", process.env.MONGODB_URI || "mongodb://localhost:27017/");
+  console.error("Is MongoDB running? Start it (or open MongoDB Compass) and try again.");
+  console.error(err.message);
+  if (!process.env.VERCEL) process.exit(1);
+});
+
+if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+  app.listen(PORT, () => console.log(`BoreSakshi API running on http://localhost:${PORT}`));
+}
 
 process.on("unhandledRejection", (reason) => console.error("[BoreSakshi] Unhandled promise rejection:", reason));
 process.on("uncaughtException", (err) => console.error("[BoreSakshi] Uncaught exception:", err));
+
+export default app;
