@@ -8,7 +8,7 @@ Know before you drill — a verified-outcome network + AI prediction engine that
 boresakshi/
 ├── server/   Node + Express + MongoDB API, ingestion and geospatial feature pipeline
 ├── web/      React + Vite + Leaflet farmer/operator/admin UI
-└── ml/       Phase 4 Python candidate-model training and artifact registry
+└── ml/       Phase 4 training + Phase 5 scientific evaluation/selection
 ```
 
 ## Run (two terminals)
@@ -44,7 +44,7 @@ Open `http://localhost:5173` and tap the map.
 - [x] Phase 2 real-data ingestion, provenance, review and quality gates
 - [x] Phase 3 real geospatial feature-engineering pipeline
 - [x] Phase 4 real-model candidate training/registry for success, water-strike depth and yield
-- [ ] Phase 5 scientific model evaluation, calibration, uncertainty and candidate selection
+- [x] Phase 5 spatial scientific evaluation, calibration, uncertainty, confidence intervals, coverage and candidate selection
 - [ ] Phase 6 Python ML service + Node orchestration/live inference
 
-The live `/api/predict` path still uses the deterministic mock in `server/predict.js`. That is deliberate: Phase 4 trains candidate artifacts, but the roadmap requires Phase 5 scientific validation before a model is selected and Phase 6 before it is wired into live predictions.
+The live `/api/predict` path still uses the deterministic mock in `server/predict.js`. That remains deliberate: Phase 5 can scientifically select candidates, but every selection stays `servingApproved=false` until the review gate is accepted and Phase 6 exposes the selected bundle through the Python ML service.
