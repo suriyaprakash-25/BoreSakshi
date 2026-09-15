@@ -6,6 +6,7 @@ on:
       - "server/**"
       - "web/**"
       - "ml/**"
+      - "README.md"
       - "docs/phase-17-*.md"
       - ".github/workflows/phase17-full-testing.yml"
   push:
