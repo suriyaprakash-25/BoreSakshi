@@ -32,8 +32,19 @@ function makeDb() {
   let record = verifiedRecord();
   let prediction = {
     id: "pred-1", lat: 11.36, lng: 77.8, successProbability: 80,
+    depthBandFt: [200, 300], expectedYieldLpm: [30, 50],
+    predictionSource: "ml", modelVersion: "phase9-hardening-model",
     createdAt: "2026-09-13T00:00:00Z",
-    actual: { borewellId: record.id, success: true }, correct: true,
+    actual: {
+      borewellId: record.id,
+      success: true,
+      depthFt: record.depthFt,
+      waterStrikeFt: record.waterStrikeFt,
+      yieldLpm: record.yieldLpm,
+      verified: true,
+      closedAt: "2026-09-15T01:00:00Z",
+    },
+    correct: true,
   };
   const audits = [];
   return {
@@ -89,7 +100,7 @@ test("decided records cannot bypass reopen-reason requirement through review sta
   });
 });
 
-test("manual flag removes trust, reopens linked ledger predictions and writes audit", async () => {
+test("manual flag removes trust, reopens linked ledger predictions and writes both audits", async () => {
   const store = makeDb();
   await withServer(appFor(store.api), async (base) => {
     const response = await fetch(`${base}/api/admin/logs/well-verified`, {
@@ -105,9 +116,12 @@ test("manual flag removes trust, reopens linked ledger predictions and writes au
     assert.equal(record.ledgerScoredAt, null);
     assert.equal(prediction.actual, null);
     assert.equal(prediction.correct, null);
-    assert.equal(audits.length, 1);
-    assert.equal(audits[0].scopeType, "rig_verification");
-    assert.equal(audits[0].action, "verification_flagged_for_review");
-    assert.equal(audits[0].details.reopenedPredictions, 1);
+    assert.equal(prediction.accountability.status, "PENDING_REVERIFY");
+    assert.equal(audits.length, 2);
+    const ledgerAudit = audits.find((event) => event.scopeType === "prediction_accountability");
+    const verificationAudit = audits.find((event) => event.scopeType === "rig_verification");
+    assert.equal(ledgerAudit.action, "outcome_reopened");
+    assert.equal(verificationAudit.action, "verification_flagged_for_review");
+    assert.equal(verificationAudit.details.reopenedPredictions, 1);
   });
 });

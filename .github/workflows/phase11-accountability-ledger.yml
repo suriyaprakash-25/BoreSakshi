@@ -1,0 +1,58 @@
+name: Phase 11 Accountability Ledger
+
+on:
+  pull_request:
+    paths:
+      - "server/**"
+      - "web/**"
+      - "docs/phase-11-*.md"
+      - ".github/workflows/phase11-accountability-ledger.yml"
+  push:
+    branches:
+      - "phase-11-accountability-ledger"
+
+jobs:
+  accountability-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: server/package-lock.json
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+      - name: Syntax-check Phase 11 path
+        run: |
+          node --check server/accountability.js
+          node --check server/phase11Routes.js
+          node --check server/phase9Routes.js
+          node --check server/phase8Routes.js
+          node --check server/predict.js
+      - name: Run Phase 11 tests
+        working-directory: server
+        run: npm run test:phase11
+      - name: Run Phase 9 verification regressions
+        working-directory: server
+        run: npm run test:phase9
+      - name: Run Phase 7 prediction regressions
+        working-directory: server
+        run: npm run test:phase7
+
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+      - name: Build public ledger and application
+        working-directory: web
+        run: npm run build
