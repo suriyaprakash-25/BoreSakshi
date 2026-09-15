@@ -14,6 +14,7 @@
     "test:phase6": "node --test test/mlClient.test.js test/predictPhase6.test.js",
     "test:phase7": "node --test test/mlClient.test.js test/predictPhase6.test.js test/predictionContract.test.js",
     "test:phase8": "node --test test/phase8.test.js test/phase8-compat.test.js test/phase8-time.test.js",
+    "test:phase9": "node --test test/phase9.test.js",
     "rig:evidence:cleanup": "node scripts/cleanup-rig-evidence.js",
     "dataset:validate": "node scripts/validate-dataset.js",
     "features:build": "node scripts/build-feature-dataset.js",
