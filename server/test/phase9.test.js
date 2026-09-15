@@ -79,6 +79,10 @@ function memoryDb(recordsInput = [operatorRecord()]) {
     lat: 11.36,
     lng: 77.8,
     successProbability: 75,
+    depthBandFt: [200, 300],
+    expectedYieldLpm: [30, 50],
+    predictionSource: "ml",
+    modelVersion: "phase9-test-model",
     createdAt: "2026-09-13T12:00:00.000Z",
     actual: null,
     correct: null,
@@ -210,7 +214,7 @@ test("verification state machine permits only explicit review transitions", () =
   assert.equal(canTransition("REJECTED", "SUBMITTED"), true);
 });
 
-test("clean submission requires review start before verify and then promotes/scorers ledger", async () => {
+test("clean submission requires review start before verify and then promotes/scores ledger", async () => {
   const store = memoryDb();
   await withServer(buildPhase9App(store.api), async (base) => {
     let result = await jsonFetch(`${base}/api/admin/review/logs/well-1/decision`, {
@@ -232,7 +236,9 @@ test("clean submission requires review start before verify and then promotes/sco
     assert.equal(result.body.record.datasetEligibility.eligible, true);
     assert.equal(store.state().predictions[0].actual.borewellId, "well-1");
     assert.equal(store.state().predictions[0].correct, true);
-    assert.equal(store.state().audits.length, 2);
+    assert.equal(store.state().predictions[0].accountability.status, "SCORED_VERIFIED");
+    assert.equal(store.state().audits.length, 3);
+    assert.ok(store.state().audits.some((event) => event.scopeType === "prediction_accountability" && event.action === "verified_outcome_scored"));
     assert.ok(store.state().operators[0].trustProfile);
   });
 });
