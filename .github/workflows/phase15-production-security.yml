@@ -11,44 +11,7 @@ on:
     branches:
       - "phase-15-production-security-reliability"
 
-permissions:
-  contents: write
-
 jobs:
-  dependency-lock-remediation:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: phase-15-production-security-reliability
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Refresh server lock within declared semver ranges
-        working-directory: server
-        run: npm audit fix --package-lock-only
-      - name: Refresh web lock within declared semver ranges
-        working-directory: web
-        # npm audit fix can exit 1 when an unrelated dev-only advisory requires a
-        # major Vite upgrade. It still writes the non-breaking production fixes.
-        # The authoritative production audit below is run separately with --omit=dev.
-        run: npm audit fix --package-lock-only || true
-      - name: Verify remediated production locks
-        run: |
-          cd server && npm audit --omit=dev --audit-level=high
-          cd ../web && npm audit --omit=dev --audit-level=high
-      - name: Commit reviewed production lock remediation
-        run: |
-          if git diff --quiet -- server/package-lock.json web/package-lock.json; then
-            echo "Lockfiles already contain the audited production fixes."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add server/package-lock.json web/package-lock.json
-          git commit -m "phase15: remediate production dependency advisories"
-          git push origin HEAD:phase-15-production-security-reliability
-
   server-security-tests:
     runs-on: ubuntu-latest
     env:
