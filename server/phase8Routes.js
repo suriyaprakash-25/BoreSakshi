@@ -60,6 +60,23 @@ async function reopenPredictionsForRecord(db, borewellId) {
   return reopened;
 }
 
+async function appendRigVerificationAudit(db, { record, action, actor, details = {} }) {
+  if (typeof db.addIngestionAudit !== "function") return null;
+  const event = {
+    id: nanoid(14),
+    batchId: null,
+    recordId: record.id,
+    scopeType: "rig_verification",
+    scopeId: record.id,
+    action,
+    actor: { id: actor.id, name: actor.name, role: actor.role || "admin" },
+    details,
+    createdAt: new Date().toISOString(),
+  };
+  await db.addIngestionAudit(event);
+  return event;
+}
+
 async function findBorewell(db, id) {
   return (await db.getAllBorewells()).find((item) => item.id === id) || null;
 }
@@ -260,6 +277,7 @@ export function createPhase8Router({
       let updated = await db.updateBorewell(existing.id, patch);
       const wasTrustedAndScored = Boolean(existing.ledgerScoredAt);
       const trustedNow = isTrustedOutcome(updated);
+      let ledgerReopened = 0;
 
       if (trustedNow && !wasTrustedAndScored) {
         const scored = await closeNearbyPredictions({ db, record: updated, distanceKm, NEAR_KM, now });
@@ -268,12 +286,28 @@ export function createPhase8Router({
           ledgerScoredPredictions: scored,
         });
       } else if (!trustedNow && wasTrustedAndScored) {
-        const reopened = await reopenPredictionsForRecord(db, updated.id);
+        ledgerReopened = await reopenPredictionsForRecord(db, updated.id);
         updated = await db.updateBorewell(updated.id, {
           ledgerScoredAt: null,
           ledgerScoredPredictions: 0,
           ledgerReopenedAt: now,
-          ledgerReopenedPredictions: reopened,
+          ledgerReopenedPredictions: ledgerReopened,
+        });
+      }
+
+      if (operatorSubmission && typeof patch.flagged === "boolean") {
+        await appendRigVerificationAudit(db, {
+          record: existing,
+          action: patch.flagged ? "verification_flagged_for_review" : "verification_flag_cleared",
+          actor: req.operator,
+          details: {
+            fromStatus: existing.verificationStatus || "SUBMITTED",
+            toStatus: updated.verificationStatus || existing.verificationStatus || "SUBMITTED",
+            reason: patch.flagged ? patch.flagReason : "",
+            trustedBefore: isTrustedOutcome(existing),
+            trustedAfter: isTrustedOutcome(updated),
+            reopenedPredictions: ledgerReopened,
+          },
         });
       }
 
