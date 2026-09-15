@@ -63,7 +63,7 @@ deploy_version() {
   echo "[phase18] pulling immutable release images for $release"
   compose_with_observability pull
   echo "[phase18] applying forward-only additive database migrations"
-  compose run --rm --no-deps api npm run migrate:up
+  compose run --rm --no-deps api node migrations/runner.js up
   echo "[phase18] starting release $release"
   compose_with_observability up -d --remove-orphans
   bash "$ROOT/deploy/scripts/smoke-test.sh" "$DEPLOY_BASE_URL"
