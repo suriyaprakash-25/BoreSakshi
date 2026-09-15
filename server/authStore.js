@@ -45,17 +45,27 @@ export const authStore = {
   },
   async revokeSession(sid, reason = "signout", at = new Date().toISOString()) {
     const col = await sessions();
-    await col.updateOne({ sid, revokedAt: null }, { $set: { revokedAt: at, revokeReason: reason } });
+    const result = await col.updateOne({ sid, revokedAt: null }, { $set: { revokedAt: at, revokeReason: reason } });
+    return result.modifiedCount || 0;
   },
   async revokeAllForOperator(operatorId, reason = "security_event", at = new Date().toISOString()) {
     const col = await sessions();
     const result = await col.updateMany({ operatorId, revokedAt: null }, { $set: { revokedAt: at, revokeReason: reason } });
     return result.modifiedCount || 0;
   },
+  async revokeOthersForOperator(operatorId, currentSid, reason = "revoke_other_sessions", at = new Date().toISOString()) {
+    const col = await sessions();
+    const result = await col.updateMany(
+      { operatorId, sid: { $ne: currentSid }, revokedAt: null },
+      { $set: { revokedAt: at, revokeReason: reason } }
+    );
+    return result.modifiedCount || 0;
+  },
   async listActiveForOperator(operatorId, { limit = 20 } = {}) {
     const col = await sessions();
-    return col.find({ operatorId, revokedAt: null, expiresAt: { $gt: new Date() } }, projection)
+    const rows = await col.find({ operatorId, revokedAt: null, expiresAt: { $gt: new Date() } }, projection)
       .sort({ createdAt: -1 }).limit(Math.min(100, Math.max(1, Number(limit) || 20))).toArray();
+    return rows.map((row) => ({ ...row, expiresAt: row.expiresAt instanceof Date ? row.expiresAt.toISOString() : row.expiresAt }));
   },
 };
 
