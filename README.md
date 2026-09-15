@@ -130,6 +130,26 @@ Phase 15 adds application-level production controls without replacing the existi
 
 Phase 15 hardens the application. Phase 18 still owns deployment infrastructure such as TLS termination, managed secrets, durable private evidence storage, scheduled off-host backups, centralized monitoring/alerts and disaster-recovery operations.
 
+## Full release testing
+
+Phase 17 adds a single release-oriented test matrix across the complete BoreSakshi stack:
+
+```text
+frontend component/form/map/auth tests + production build/preview
+                       ↓
+complete Node unit/API/security/accountability suite
+                       ↓
+real Node + real MongoDB drilling/accountability E2E
+                       ↓
+complete Python ML regression/leakage/inference suite
+                       ↓
+              Phase 17 release gate
+```
+
+The real-Mongo E2E covers operator registration/login, admin operator verification, farmer prediction persistence, explicit fallback behavior when ML is unavailable, rig evidence upload, structured drilling submission, Phase 9 verification, Phase 11 accountability scoring, public privacy projection and outcome reopening/audit retention.
+
+Verified Phase 17 runtime-head results: 77 active backend tests passed with two intentional skips in the generic suite, the separate Mongo lifecycle passed, 5 frontend tests passed, the production frontend build/preview passed, 36 ML tests passed, and production server/web dependency audits passed with zero production vulnerabilities. See `docs/phase-17-full-testing.md` and `docs/phase-17-completion-report.md` for the exact scope and boundaries.
+
 ## Run locally
 
 **1) Python ML service**
@@ -184,6 +204,14 @@ npm run backup:verify -- <backup-directory>
 npm run backup:restore -- <backup-directory>   # dry-run by default
 ```
 
+Phase 17 backend test commands:
+
+```bash
+npm run test:phase17
+# dedicated real-Mongo lifecycle requires PHASE17_E2E=YES and a MongoDB URI
+npm run test:phase17:e2e
+```
+
 Phase 8 evidence is stored under `RIG_MEDIA_DIR`. Production deployment must use durable/private storage; the local default is for development and application-contract validation.
 
 Verification review is available to admins at `/admin/review`. Rig operators see their server-computed Phase 9 trust profile on the dashboard and can request re-review for rejected submissions from History.
@@ -195,6 +223,8 @@ The public `/ledger` page reports persisted prediction counts, classification ac
 ```bash
 cd web
 npm install
+npm run test:phase17
+npm run build
 npm run dev      # http://localhost:5173
 ```
 
@@ -213,7 +243,7 @@ Signup displays a recovery code once. Save it securely; only its hash is stored 
 - [x] Phase 10 — adaptive retraining + production comparison + human approval + staged activation + rollback controls
 - [x] Phase 11 — model-version prediction accountability, calibration, depth/yield error and regional performance
 - [x] Phase 15 — production application security, privacy, sessions, recovery, audits, backups and monitoring
-- [ ] Phase 17 — full testing
+- [x] Phase 17 — full frontend/backend/ML/integration/end-to-end release testing
 - [ ] Phase 18 — deployment and DevOps
 
-Phase 10 consumes only Phase 9-trusted data and never automatically replaces production. Phase 11 supplies model-version-scoped post-deployment evidence to Phase 10 monitoring but never auto-retrains or auto-rolls back a model. Phase 15 closes the application-level security/reliability gate; Phase 17 owns the full-system test matrix and Phase 18 owns durable production deployment and operations.
+Phase 10 consumes only Phase 9-trusted data and never automatically replaces production. Phase 11 supplies model-version-scoped post-deployment evidence to Phase 10 monitoring but never auto-retrains or auto-rolls back a model. Phase 15 closes the application-level security/reliability gate, Phase 17 closes the full-system software testing gate, and Phase 18 remains responsible for durable production deployment and operations.
