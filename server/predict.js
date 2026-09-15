@@ -1,4 +1,4 @@
-// predict.js — Phase 7 real prediction orchestration.
+// predict.js — Phase 7/10 real prediction orchestration.
 // The public response contract remains compatible with the existing frontend.
 // Real inference is delegated to the Python ML service; the deterministic
 // heuristic exists only as an explicitly-labelled outage/coverage/contract fallback.
@@ -90,6 +90,7 @@ export function predictHeuristic({ lat, lng, nearbyLogs = [], fallbackReason = n
     predictionSource: "heuristic_fallback",
     modelAvailable: false,
     modelVersion: null,
+    deploymentId: null,
     featureVersion: null,
     predictionContractVersion: PREDICTION_CONTRACT_VERSION,
     featureSnapshotRef: null,
@@ -129,6 +130,7 @@ function mapMlResponse(result, { lat, lng, nearbyLogs }) {
     predictionSource: "ml",
     modelAvailable: true,
     modelVersion: result.modelVersion,
+    deploymentId: result.deploymentId || null,
     featureVersion: result.featureVersion,
     predictionContractVersion: result.predictionContractVersion,
     featureSnapshotRef: result.featureSnapshotRef,
