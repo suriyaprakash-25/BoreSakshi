@@ -1,8 +1,7 @@
 // api.js — all backend calls in one place.
 const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
-// ---- operator session (localStorage) ---------------------------------------
-const AUTH_KEY = "boresakshi_auth"; // legacy key; auth itself is cookie-backed
+const AUTH_KEY = "boresakshi_auth";
 
 export function getAuth() {
   try { return JSON.parse(localStorage.getItem(AUTH_KEY)) || null; } catch { return null; }
@@ -14,10 +13,10 @@ async function readError(res, fallback) {
   const body = await res.json().catch(() => ({}));
   const err = new Error(body.error || body?.detail?.message || fallback);
   err.status = res.status;
+  err.body = body;
   return err;
 }
 
-// ---- farmer flow (open, no auth) -------------------------------------------
 export async function getPrediction(lat, lng) {
   const res = await fetch(`${API}/api/predict`, {
     method: "POST",
@@ -40,7 +39,6 @@ export async function getLedger() {
   return res.json();
 }
 
-// ---- operator auth ---------------------------------------------------------
 export async function signup({ name, phone, password, confirmPassword }) {
   const res = await fetch(`${API}/api/auth/signup`, {
     method: "POST",
@@ -70,7 +68,6 @@ export async function signout() {
   }).catch(() => {});
 }
 
-// ---- operator flow (auth required) -----------------------------------------
 export async function uploadRigEvidence(file) {
   const res = await fetch(`${API}/api/operator/evidence`, {
     method: "POST",
@@ -95,8 +92,6 @@ export async function deleteRigEvidence(item) {
   return res.json();
 }
 
-// Phase 8 submission enters verification. It does not score the public ledger
-// until an admin verifies the record.
 export async function logBorewell(payload) {
   const res = await fetch(`${API}/api/borewells`, {
     method: "POST",
@@ -120,11 +115,27 @@ export async function getAssignments() {
   return res.json();
 }
 
+export async function getOperatorTrust() {
+  const res = await fetch(`${API}/api/operator/trust`, { credentials: "include" });
+  if (!res.ok) throw await readError(res, "Could not load trust profile");
+  return res.json();
+}
+
+export async function requestSubmissionReview(id, note) {
+  const res = await fetch(`${API}/api/borewells/${encodeURIComponent(id)}/request-review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ note }),
+  });
+  if (!res.ok) throw await readError(res, "Could not request another review");
+  return res.json();
+}
+
 export function rigEvidenceUrl(borewellId, evidenceId) {
   return `${API}/api/borewells/${encodeURIComponent(borewellId)}/evidence/${encodeURIComponent(evidenceId)}`;
 }
 
-// ---- admin (auth + admin role required) ------------------------------------
 export async function adminGetOperators() {
   const res = await fetch(`${API}/api/admin/operators`, { credentials: "include" });
   if (!res.ok) throw await readError(res, "Could not load operators");
@@ -156,6 +167,64 @@ export async function adminPatchLog(id, patch) {
     body: JSON.stringify(patch),
   });
   if (!res.ok) throw await readError(res, "Could not update log");
+  return res.json();
+}
+
+export async function adminGetReviewStats() {
+  const res = await fetch(`${API}/api/admin/review/stats`, { credentials: "include" });
+  if (!res.ok) throw await readError(res, "Could not load review statistics");
+  return res.json();
+}
+
+export async function adminGetReviewQueue(status = "") {
+  const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+  const res = await fetch(`${API}/api/admin/review/queue${suffix}`, { credentials: "include" });
+  if (!res.ok) throw await readError(res, "Could not load review queue");
+  return res.json();
+}
+
+export async function adminGetReviewRecord(id) {
+  const res = await fetch(`${API}/api/admin/review/logs/${encodeURIComponent(id)}`, { credentials: "include" });
+  if (!res.ok) throw await readError(res, "Could not load review record");
+  return res.json();
+}
+
+export async function adminStartReview(id, note = "") {
+  const res = await fetch(`${API}/api/admin/review/logs/${encodeURIComponent(id)}/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ note }),
+  });
+  if (!res.ok) throw await readError(res, "Could not start review");
+  return res.json();
+}
+
+export async function adminReviewDecision(id, payload) {
+  const res = await fetch(`${API}/api/admin/review/logs/${encodeURIComponent(id)}/decision`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await readError(res, "Could not save review decision");
+  return res.json();
+}
+
+export async function adminReopenReview(id, reason) {
+  const res = await fetch(`${API}/api/admin/review/logs/${encodeURIComponent(id)}/reopen`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) throw await readError(res, "Could not reopen review");
+  return res.json();
+}
+
+export async function adminGetOperatorTrust(id) {
+  const res = await fetch(`${API}/api/admin/operators/${encodeURIComponent(id)}/trust`, { credentials: "include" });
+  if (!res.ok) throw await readError(res, "Could not load operator trust profile");
   return res.json();
 }
 
