@@ -24,7 +24,14 @@ jobs:
         run: npm audit fix --package-lock-only
       - name: Refresh web lock within declared semver ranges
         working-directory: web
-        run: npm audit fix --package-lock-only
+        # npm audit fix can exit 1 when an unrelated dev-only advisory requires a
+        # major Vite upgrade. It still writes the non-breaking production fixes.
+        # The authoritative production audit below is run separately with --omit=dev.
+        run: npm audit fix --package-lock-only || true
+      - name: Verify remediated production locks before packaging
+        run: |
+          cd server && npm audit --omit=dev --audit-level=high
+          cd ../web && npm audit --omit=dev --audit-level=high
       - name: Show security-only lock changes
         run: git diff -- server/package-lock.json web/package-lock.json
       - name: Package refreshed lockfiles for review
