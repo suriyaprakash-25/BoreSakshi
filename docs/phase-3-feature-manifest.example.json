@@ -1,0 +1,79 @@
+{
+  "datasetVersion": "geo-2026-09-15.1",
+  "parameters": {
+    "nearbyRadiusKm": 5,
+    "densityRadiusKm": 2,
+    "spatialBlockDeg": 0.1
+  },
+  "layers": [
+    {
+      "id": "dem-srtm-example",
+      "kind": "dem",
+      "format": "esri_ascii",
+      "path": "../geospatial-data/dem.asc",
+      "sourceName": "Replace with authoritative DEM source",
+      "sourceReference": "Replace with dataset URL/catalog ID",
+      "license": "Replace with verified license",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "static": true
+    },
+    {
+      "id": "drainage-example",
+      "kind": "drainage",
+      "format": "geojson",
+      "path": "../geospatial-data/drainage.geojson",
+      "sourceName": "Replace with authoritative drainage source",
+      "sourceReference": "Replace with dataset URL/catalog ID",
+      "license": "Replace with verified license",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "static": true
+    },
+    {
+      "id": "geology-example",
+      "kind": "geology",
+      "format": "geojson",
+      "path": "../geospatial-data/geology.geojson",
+      "sourceName": "Replace with authoritative geology source",
+      "sourceReference": "Replace with dataset URL/catalog ID",
+      "license": "Replace with verified license",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "static": true,
+      "formationProperty": "formation",
+      "lithologyProperty": "lithology"
+    },
+    {
+      "id": "rainfall-annual-2025-example",
+      "kind": "rainfallAnnual",
+      "format": "esri_ascii",
+      "path": "../geospatial-data/rainfall-annual-2025.asc",
+      "sourceName": "Replace with authoritative rainfall source",
+      "sourceReference": "Replace with dataset URL/catalog ID",
+      "license": "Replace with verified license",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "observedAt": "2025-12-31T23:59:59Z"
+    },
+    {
+      "id": "ndvi-2025-12-example",
+      "kind": "ndvi",
+      "format": "esri_ascii",
+      "path": "../geospatial-data/ndvi-2025-12.asc",
+      "sourceName": "Replace with authoritative satellite source",
+      "sourceReference": "Replace with dataset URL/catalog ID",
+      "license": "Replace with verified license",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "observedAt": "2025-12-31T23:59:59Z"
+    },
+    {
+      "id": "lulc-2025-example",
+      "kind": "landUse",
+      "format": "geojson",
+      "path": "../geospatial-data/lulc-2025.geojson",
+      "sourceName": "Replace with authoritative LULC source",
+      "sourceReference": "Replace with dataset URL/catalog ID",
+      "license": "Replace with verified license",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "observedAt": "2025-12-31T23:59:59Z",
+      "property": "class"
+    }
+  ]
+}

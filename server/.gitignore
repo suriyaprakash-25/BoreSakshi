@@ -1,5 +1,11 @@
 node_modules/
 data.json
+feature-artifacts/
+
+# local/raw geospatial datasets are large and may have redistribution restrictions
+# keep source rasters/vectors outside git; commit only manifests/docs/tests.
+data/
+geospatial-data/
 
 # secrets — never commit real environment values
 .env

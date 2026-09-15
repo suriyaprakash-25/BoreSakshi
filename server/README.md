@@ -1,11 +1,12 @@
 # BoreSakshi — Backend (MongoDB)
 
-API for the borewell logging tool, farmer prediction screen, public accountability ledger, and the review-gated Phase 2 real-data ingestion pipeline. Node + Express + **MongoDB**.
+API for the borewell logging tool, farmer prediction screen, public accountability ledger, the review-gated Phase 2 real-data ingestion pipeline, and the Phase 3 geospatial feature-engineering pipeline. Node + Express + **MongoDB**.
 
 - Connection: `mongodb://localhost:27017/`
 - Database: `BoreSakshi`
 - Core collections: `borewells`, `predictions`, `operators`, `assignments`
 - Phase 2 collections: `ingestion_batches`, `staged_borewells`, `ingestion_audit`, `dataset_assets`
+- Phase 3 output: versioned offline ML-ready feature artifacts under `feature-artifacts/` (gitignored)
 
 ## Run it
 
@@ -26,6 +27,7 @@ All secrets live in `server/.env` (gitignored). In production (`NODE_ENV=product
 ```bash
 npm test
 npm run test:phase2
+npm run test:phase3
 ```
 
 The live Phase 2 HTTP contract test is intentionally write-gated and must target a disposable test database/server:
@@ -93,9 +95,32 @@ PHASE2_MIGRATION_APPROVED=YES npm run migrate:phase2:apply
 PHASE2_MIGRATION_APPROVED=YES npm run migrate:phase2:rollback
 ```
 
+## Phase 3 geospatial feature engineering
+
+Phase 3 converts approved borewell records plus real raster/vector layers into a versioned ML-ready dataset. It intentionally runs offline so source licensing, checksums, temporal cutoffs and coverage can be reviewed before model training.
+
+Supported standardized inputs:
+
+- ESRI ASCII Grid rasters (`dem`, flow accumulation, rainfall, NDVI/NDWI, categorical rasters)
+- GeoJSON vectors (drainage, watershed, geology, lineaments, LULC polygons)
+
+The build enforces source SHA-256, license/reference metadata, target-outcome separation, strictly historical nearby-well features, dynamic-layer observation cutoffs, missing-feature coverage reporting and deterministic spatial block IDs.
+
+```bash
+npm run features:build -- \
+  --manifest=../docs/your-feature-manifest.json \
+  --targets=../data/approved-borewells.json \
+  --out=feature-artifacts/features-v1.json
+```
+
+Start from `../docs/phase-3-feature-manifest.example.json`. Generated artifacts and raw geospatial data are gitignored by default.
+
+See `../docs/phase-3-geospatial-feature-engineering.md` for the feature contract, leakage controls, source requirements and Phase 4 review gate.
+
 ## Notes
 
-- **Only `db.js` talks to MongoDB.** `index.js` awaits its methods; `predict.js` and `ingestion.js` keep logic testable.
-- **The real AI plugs into `predict.js` only** — the current prediction remains deterministic/mock and Phase 2 does not rewrite it.
-- Imported rows cannot influence predictions until an admin approves them and publishes the batch.
+- **Only `db.js` talks to MongoDB.** `index.js` awaits its methods; `predict.js`, `ingestion.js`, `geospatial.js` and `featurePipeline.js` keep core logic deterministic/testable.
+- **The real AI still plugs into `predict.js` only.** Phase 3 builds real features but deliberately does not replace the existing deterministic mock before a model is trained and spatially evaluated.
+- Imported Phase 2 rows cannot influence predictions until an admin approves them and publishes the batch.
+- Phase 3 feature artifacts report data coverage/provenance, not invented model performance metrics.
 - Env overrides: `MONGODB_URI`, `MONGODB_DB`, `PORT`, `INGESTION_MAX_BYTES`.
