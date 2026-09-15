@@ -30,7 +30,7 @@ Calibration + conformal uncertainty + explanations
    ↓
 Phase 7 versioned prediction-contract validation
    ↓
-Node contract validation + persistence/accountability ledger
+Node contract validation + Phase 11 accountability snapshot
 ```
 
 Every accepted ML prediction carries a model version, feature version, prediction timestamp, uncertainty, explanations, coverage metadata and an immutable `featureSnapshotRef`. If the Python service is unavailable or returns an invalid/insufficient-coverage response, Node returns the deterministic heuristic **only as an explicitly labelled `heuristic_fallback`**. It is never presented as ML.
@@ -83,11 +83,34 @@ STAGED deployment
    ↓ explicit DEPLOY
 ACTIVE deployment pointer
    ↓
-post-deployment monitoring
+Phase 11 post-deployment accountability metrics
+   ↓ human monitoring/review
    ↓ explicit ROLLBACK when required
 ```
 
 Phase 10 is continuous learning/adaptive retraining, **not reinforcement learning**. A new upload can never directly overwrite the production model. Automated comparison guards can hold a candidate for review, but only a separate human approval artifact and explicit deployment action can activate it.
+
+## Prediction accountability path
+
+```text
+Persisted prediction
+   ↓
+model/deployment/probability/depth/yield snapshot
+   ↓
+real borewell drilled
+   ↓
+Phase 9 VERIFIED outcome
+   ↓
+pre-drilling prediction matched within accountability radius
+   ↓
+correctness + Brier/calibration + strike/yield errors
+   ↓
+regional + model-version + source performance
+   ↓
+Phase 10 monitoring input
+```
+
+Phase 11 preserves real ML model versions separately from `heuristic_fallback`. If outcome trust is later reopened or removed, that outcome is removed from current performance metrics and the reopening is retained in append-only accountability history.
 
 ## Run locally
 
@@ -137,6 +160,8 @@ Phase 8 evidence is stored under `RIG_MEDIA_DIR`. Production deployment must use
 
 Verification review is available to admins at `/admin/review`. Rig operators see their server-computed Phase 9 trust profile on the dashboard and can request re-review for rejected submissions from History.
 
+The public `/ledger` page now reports persisted prediction counts, classification accuracy, Brier/calibration, water-strike/yield error, model-version performance and regional performance. `GET /api/ledger`, `/api/ledger/entries`, `/api/ledger/models` and `/api/ledger/regions` expose the same additive accountability contract.
+
 **3) Web**
 
 ```bash
@@ -156,9 +181,9 @@ npm run dev      # http://localhost:5173
 - [x] Phase 8 — authenticated structured rig-operator data collection + evidence + untrusted-by-default gate
 - [x] Phase 9 — formal verification lifecycle + suspicious-data review + operator/data trust + append-only audit
 - [x] Phase 10 — adaptive retraining + production comparison + human approval + staged activation + rollback controls
-- [ ] Phase 11 — strengthened prediction accountability ledger
+- [x] Phase 11 — model-version prediction accountability, calibration, depth/yield error and regional performance
 - [ ] Phase 15 — production security and reliability
 - [ ] Phase 17 — full testing
 - [ ] Phase 18 — deployment and DevOps
 
-Phase 10 consumes only Phase 9-trusted data and never automatically replaces production. Phase 11 provides the model-version-scoped post-deployment evidence used by Phase 10 monitoring. Phase 15 must remediate dependency/security findings before launch; Phase 18 must provide durable evidence storage, backups and production deployment infrastructure.
+Phase 10 consumes only Phase 9-trusted data and never automatically replaces production. Phase 11 supplies model-version-scoped post-deployment evidence to Phase 10 monitoring but never auto-retrains or auto-rolls back a model. Phase 15 must remediate dependency/security findings before launch; Phase 18 must provide durable evidence storage, backups and production deployment infrastructure.
