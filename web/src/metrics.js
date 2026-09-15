@@ -1,9 +1,7 @@
-// metrics.js — pure helpers for operator stats, shared by Dashboard + History.
-// No React, no fetching — just functions over an array of borewell log records.
+// metrics.js — pure helpers for operator/admin stats.
+// Phase 8 trust rule: outcome/groundwater/trust metrics use verified, unflagged,
+// dataset-eligible records only. Submission/activity counts may include pending logs.
 
-// Strata buckets ordered shallow → deep, with a SEQUENTIAL teal→navy ramp
-// (light = shallow/weathered, dark = hard/compact rock at depth). "Other" sits
-// apart in neutral grey since it isn't a depth on the ramp.
 export const STRATA_BUCKETS = [
   { key: "weathered",  label: "Weathered rock",        color: "#8fd4e6" },
   { key: "wfract",     label: "Weathered / fractured", color: "#57b3cc" },
@@ -23,15 +21,23 @@ export function classifyStrata(strata) {
   return "other";
 }
 
-// overall water-strike success rate (0..100), or null when there are no logs
+export function trustedOutcomeLogs(logs) {
+  return (logs || []).filter((log) =>
+    log?.verified === true &&
+    log?.flagged !== true &&
+    log?.datasetEligibility?.eligible !== false
+  );
+}
+
 export function successRate(logs) {
-  if (!logs.length) return null;
-  const wins = logs.filter((l) => l.success).length;
-  return Math.round((wins / logs.length) * 100);
+  const trusted = trustedOutcomeLogs(logs);
+  if (!trusted.length) return null;
+  const wins = trusted.filter((l) => l.success).length;
+  return Math.round((wins / trusted.length) * 100);
 }
 
 export function averageDepth(logs) {
-  const depths = logs.map((l) => l.depthFt).filter((d) => typeof d === "number");
+  const depths = trustedOutcomeLogs(logs).map((l) => l.depthFt).filter((d) => typeof d === "number");
   if (!depths.length) return null;
   return Math.round(depths.reduce((a, b) => a + b, 0) / depths.length);
 }
@@ -41,7 +47,7 @@ export function logsThisWeek(logs) {
   return logs.filter((l) => new Date(l.createdAt).getTime() >= weekAgo).length;
 }
 
-// count of logs for each of the last `months` calendar months, oldest → newest
+// Operational submission-volume chart: deliberately includes pending submissions.
 export function logsPerMonth(logs, months = 6) {
   const now = new Date();
   const buckets = [];
@@ -63,10 +69,9 @@ export function logsPerMonth(logs, months = 6) {
   return buckets;
 }
 
-// strata composition across all logs, in shallow→deep order, only non-empty buckets
 export function strataBreakdown(logs) {
   const counts = new Map();
-  for (const l of logs) {
+  for (const l of trustedOutcomeLogs(logs)) {
     const k = classifyStrata(l.strata);
     counts.set(k, (counts.get(k) || 0) + 1);
   }
@@ -75,29 +80,26 @@ export function strataBreakdown(logs) {
     .filter((b) => b.count > 0);
 }
 
-// Field trust score (0..100): a track-record signal for the operator as a data
-// contributor — logging volume, how completely each log is filled, and recency.
-// (Deliberately NOT success rate — a well-documented dry hole is valuable data.)
-// A `verified` operator earns a small fixed bonus (capped at 100).
+// Legacy contribution indicator retained only for UI continuity until Phase 9
+// replaces it with the production trust model. Even this indicator uses verified
+// outcomes only so pending/flagged data cannot boost a trust-related metric.
 export const VERIFIED_TRUST_BONUS = 12;
 
 export function trustScore(logs, { verified = false } = {}) {
+  const trusted = trustedOutcomeLogs(logs);
   let base = 0;
-  if (logs.length) {
-    const volume = Math.min(1, logs.length / 20);
-
+  if (trusted.length) {
+    const volume = Math.min(1, trusted.length / 20);
     const completeness =
-      logs.reduce((sum, l) => {
+      trusted.reduce((sum, l) => {
         const expected = ["depthFt", "strata"];
         if (l.success) expected.push("waterStrikeFt", "yieldLpm");
         const filled = expected.filter((f) => l[f] !== null && l[f] !== undefined && l[f] !== "").length;
         return sum + filled / expected.length;
-      }, 0) / logs.length;
-
-    const newest = Math.max(...logs.map((l) => new Date(l.createdAt).getTime()));
+      }, 0) / trusted.length;
+    const newest = Math.max(...trusted.map((l) => new Date(l.createdAt).getTime()));
     const days = (Date.now() - newest) / 86400000;
     const recency = days <= 30 ? 1 : days <= 60 ? 0.5 : 0;
-
     base = Math.round(100 * (0.5 * volume + 0.35 * completeness + 0.15 * recency));
   }
 
@@ -107,20 +109,16 @@ export function trustScore(logs, { verified = false } = {}) {
   return { score, base, bonus, label, verified };
 }
 
-// timestamp (ms) of an operator's most recent log, or null
 export function lastActiveAt(logs) {
   if (!logs.length) return null;
   return logs.reduce((m, l) => Math.max(m, new Date(l.createdAt).getTime()), 0);
 }
 
-// did this set of logs see activity within `days`?
 export function activeWithin(logs, days) {
   const last = lastActiveAt(logs);
   return last != null && Date.now() - last <= days * 86400000;
 }
 
-// shared log filter for History + admin operator detail + global lists.
-// Matches on place/village, rock type, and (for admin lists) operator name.
 export function filterLogs(logs, { query = "", outcome = "all" } = {}) {
   const q = query.trim().toLowerCase();
   return logs.filter((l) => {
@@ -136,13 +134,13 @@ export function filterLogs(logs, { query = "", outcome = "all" } = {}) {
   });
 }
 
-// per-operator aggregate row, reused by the admin operators table + leaderboard
 export function operatorRow(operator, allLogs) {
   const logs = allLogs.filter((l) => l.operatorId === operator.id);
   return {
     operator,
     logs,
     count: logs.length,
+    verifiedCount: trustedOutcomeLogs(logs).length,
     successRate: successRate(logs),
     avgDepth: averageDepth(logs),
     lastActiveAt: lastActiveAt(logs),
@@ -153,12 +151,10 @@ export function operatorRows(operators, allLogs) {
   return operators.map((o) => operatorRow(o, allLogs));
 }
 
-// human label for a log's location: village/place if given, else coordinates
 export function placeLabel(log) {
   return log.placeName?.trim() || `${log.lat.toFixed(3)}, ${log.lng.toFixed(3)}`;
 }
 
-// short friendly date, e.g. "16 Jul 2026"
 export function fmtDate(iso) {
   return new Date(iso).toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric" });
 }

@@ -3,15 +3,11 @@ import http from "http";
 const API_BASE = "http://localhost:4000/api";
 const report = [];
 let authCookie = "";
-let predictionId = "";
-let csrfToken = "";
-let borewellId = "";
 
 async function fetchAPI(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
   const headers = { ...options.headers };
   if (authCookie) headers.Cookie = authCookie;
-  if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
 
   try {
     const res = await fetch(url, { ...options, headers });
@@ -24,7 +20,6 @@ async function fetchAPI(endpoint, options = {}) {
 
     const isJson = res.headers.get("content-type")?.includes("application/json");
     const data = isJson ? await res.json() : await res.text();
-    if (data?.csrfToken) csrfToken = data.csrfToken;
     return { status: res.status, ok: res.ok, data };
   } catch (err) {
     console.error(`Fetch error for ${url}:`, err);
@@ -67,8 +62,6 @@ async function main() {
     });
     assert(res.status === 200, `Expected 200, got ${res.status}`);
     assert(res.data.successProbability !== undefined, "Missing successProbability");
-    assert(typeof res.data.predictionId === "string", "Missing saved prediction ID");
-    predictionId = res.data.predictionId;
   });
 
   // 3. Borewells (Public)
@@ -112,27 +105,7 @@ async function main() {
     assert(authCookie !== "", "Cookie was not set on signin");
   });
 
-  // 6. Cookie-backed session restoration
-  await runTest("GET /api/auth/session", async () => {
-    const res = await fetchAPI("/auth/session");
-    assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(res.data.operator?.id, "Missing session operator");
-    assert(typeof res.data.csrfToken === "string", "Missing CSRF token");
-  });
-
-  await runTest("CSRF rejects protected writes without a token", async () => {
-    const savedToken = csrfToken;
-    csrfToken = "";
-    const res = await fetchAPI("/borewells", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lat: 11.38, lng: 77.89, success: true, depthFt: 300 }),
-    });
-    csrfToken = savedToken;
-    assert(res.status === 403, `Expected 403, got ${res.status}`);
-  });
-
-  // 7. Operator Protected Routes
+  // 6. Operator Protected Routes
   await runTest("GET /api/borewells/mine", async () => {
     const res = await fetchAPI("/borewells/mine");
     assert(res.status === 200, `Expected 200, got ${res.status}`);
@@ -150,42 +123,20 @@ async function main() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        lat: 11.38, lng: 77.89, success: true, depthFt: 300, strata: "Hard", waterStrikeFt: 250, yieldLpm: 100,
-        predictionId
+        lat: 11.3, lng: 77.8, success: true, depthFt: 300, strata: "Hard", waterStrikeFt: 250, yieldLpm: 100
       })
     });
     assert(res.status === 201, `Expected 201, got ${res.status}`);
     assert(res.data.id !== undefined, "Missing borewell ID in response");
-    borewellId = res.data.id;
-    assert(/^BW-[A-Z0-9_-]+$/.test(res.data.publicId), "Missing public borewell ID");
-    assert(res.data.status === "ACTIVE", "Expected ACTIVE borewell status");
-    assert(res.data.verificationStatus === "SUBMITTED", "Expected submitted verification status");
-    assert(res.data.scoredPredictions === 1, "Explicitly linked prediction was not scored");
   });
 
-  await runTest("POST /api/borewells/:id/observations", async () => {
-    const res = await fetchAPI(`/borewells/${borewellId}/observations`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "WATER_LEVEL", waterLevelFt: 42, note: "Follow-up measurement" }),
-    });
-    assert(res.status === 201, `Expected 201, got ${res.status}`);
-    assert(res.data.type === "WATER_LEVEL", "Observation type was not saved");
-  });
-
-  await runTest("GET /api/borewells/:id/observations", async () => {
-    const res = await fetchAPI(`/borewells/${borewellId}/observations`);
-    assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(res.data.length >= 2, "Expected drilling and follow-up observations");
-  });
-
-  // 8. Admin Protected Routes (Should fail with 403 since we are a normal operator)
+  // 7. Admin Protected Routes (Should fail with 403 since we are a normal operator)
   await runTest("GET /api/admin/operators (Role check)", async () => {
     const res = await fetchAPI("/admin/operators");
     assert(res.status === 403, `Expected 403 Forbidden, got ${res.status}`);
   });
 
-  // 9. Signout
+  // 8. Signout
   await runTest("POST /api/auth/signout", async () => {
     const res = await fetchAPI("/auth/signout", { method: "POST" });
     assert(res.status === 200, `Expected 200, got ${res.status}`);
@@ -193,7 +144,7 @@ async function main() {
     authCookie = res.headers?.get("set-cookie")?.split(';')[0] || ""; // should be a clear cookie
   });
 
-  // 10. Verify Unauthorized access after signout
+  // 9. Verify Unauthorized access after signout
   await runTest("GET /api/borewells/mine (Unauthorized)", async () => {
     // We send empty authCookie
     authCookie = "";

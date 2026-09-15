@@ -1,6 +1,7 @@
 node_modules/
 data.json
 feature-artifacts/
+rig-media/
 
 # local/raw geospatial datasets are large and may have redistribution restrictions
 # keep source rasters/vectors outside git; commit only manifests/docs/tests.

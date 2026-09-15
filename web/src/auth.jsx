@@ -1,41 +1,22 @@
-// auth.jsx — cookie-backed operator session context.
-// The browser never stores JWTs or account data in localStorage.
-import { createContext, useContext, useState, useCallback, useEffect } from "react";
-import { getSession, signout as apiSignout } from "./api.js";
+// auth.jsx — operator session context. Backed by localStorage (see api.js).
+// Farmers never hit this; only the /log flow reads it.
+import { createContext, useContext, useState, useCallback } from "react";
+import { getAuth, setAuth as persist, clearAuth, signout as apiSignout } from "./api.js";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [operator, setOperator] = useState(null);
-  const [sessionReady, setSessionReady] = useState(false);
+  const [auth, setAuthState] = useState(getAuth); // { token, operator } | null
 
-  useEffect(() => {
-    let active = true;
-    getSession()
-      .then((session) => {
-        if (active) setOperator(session?.operator || null);
-      })
-      .catch(() => {
-        if (active) setOperator(null);
-      })
-      .finally(() => {
-        if (active) setSessionReady(true);
-      });
-    return () => { active = false; };
-  }, []);
+  const signIn = useCallback((data) => { persist(data); setAuthState(data); }, []);
+  const signOut = useCallback(() => { apiSignout(); clearAuth(); setAuthState(null); }, []);
 
-  const signIn = useCallback((data) => {
-    setOperator(data?.operator || null);
-    setSessionReady(true);
-  }, []);
-
-  const signOut = useCallback(async () => {
-    await apiSignout();
-    setOperator(null);
-    setSessionReady(true);
-  }, []);
-
-  const value = { token: null, operator, sessionReady, signIn, signOut };
+  const value = {
+    token: auth?.token || null,
+    operator: auth?.operator || null,
+    signIn,
+    signOut,
+  };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

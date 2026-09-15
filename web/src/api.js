@@ -1,13 +1,18 @@
 // api.js — all backend calls in one place.
 const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
-let csrfToken = null;
 
-const csrfHeaders = () => csrfToken ? { "X-CSRF-Token": csrfToken } : {};
-const setCsrfToken = (token) => { csrfToken = token || null; };
+// ---- operator session (localStorage) ---------------------------------------
+const AUTH_KEY = "boresakshi_auth"; // legacy key; auth itself is cookie-backed
+
+export function getAuth() {
+  try { return JSON.parse(localStorage.getItem(AUTH_KEY)) || null; } catch { return null; }
+}
+export function setAuth(auth) { localStorage.setItem(AUTH_KEY, JSON.stringify(auth)); }
+export function clearAuth() { localStorage.removeItem(AUTH_KEY); }
 
 async function readError(res, fallback) {
   const body = await res.json().catch(() => ({}));
-  const err = new Error(body.error || fallback);
+  const err = new Error(body.error || body?.detail?.message || fallback);
   err.status = res.status;
   return err;
 }
@@ -44,9 +49,7 @@ export async function signup({ name, phone, password, confirmPassword }) {
     body: JSON.stringify({ name, phone, password, confirmPassword }),
   });
   if (!res.ok) throw await readError(res, "Could not create account");
-  const data = await res.json();
-  setCsrfToken(data.csrfToken);
-  return data; // { operator, csrfToken }
+  return res.json();
 }
 
 export async function signin({ phone, password }) {
@@ -57,41 +60,47 @@ export async function signin({ phone, password }) {
     body: JSON.stringify({ phone, password }),
   });
   if (!res.ok) throw await readError(res, "Could not sign in");
-  const data = await res.json();
-  setCsrfToken(data.csrfToken);
-  return data; // { operator, csrfToken }
+  return res.json();
 }
 
 export async function signout() {
   await fetch(`${API}/api/auth/signout`, {
     method: "POST",
-    headers: csrfHeaders(),
     credentials: "include",
   }).catch(() => {});
-  setCsrfToken(null);
-}
-
-// Restore the safe operator profile from the HTTP-only cookie. A missing or
-// expired session is normal for public visitors, so it resolves to null.
-export async function getSession() {
-  const res = await fetch(`${API}/api/auth/session`, { credentials: "include" });
-  if (res.status === 401 || res.status === 403) {
-    setCsrfToken(null);
-    return null;
-  }
-  if (!res.ok) throw await readError(res, "Could not restore your session");
-  const data = await res.json();
-  setCsrfToken(data.csrfToken);
-  return data;
 }
 
 // ---- operator flow (auth required) -----------------------------------------
-// Rig operator logs a completed drill (a verified outcome). This is what feeds
-// the accountability ledger — every log scores any open predictions nearby.
+export async function uploadRigEvidence(file) {
+  const res = await fetch(`${API}/api/operator/evidence`, {
+    method: "POST",
+    headers: {
+      "Content-Type": file.type || "application/octet-stream",
+      "X-File-Name": encodeURIComponent(file.name || "evidence"),
+    },
+    credentials: "include",
+    body: file,
+  });
+  if (!res.ok) throw await readError(res, "Could not upload evidence");
+  return res.json();
+}
+
+export async function deleteRigEvidence(item) {
+  const res = await fetch(`${API}/api/operator/evidence/${item.id}`, {
+    method: "DELETE",
+    headers: { "X-Evidence-Token": item.token },
+    credentials: "include",
+  });
+  if (!res.ok) throw await readError(res, "Could not remove evidence");
+  return res.json();
+}
+
+// Phase 8 submission enters verification. It does not score the public ledger
+// until an admin verifies the record.
 export async function logBorewell(payload) {
   const res = await fetch(`${API}/api/borewells`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...csrfHeaders() },
+    headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify(payload),
   });
@@ -99,35 +108,20 @@ export async function logBorewell(payload) {
   return res.json();
 }
 
-// this operator's own logs (newest first) — dashboard + history
 export async function getMyBorewells() {
   const res = await fetch(`${API}/api/borewells/mine`, { credentials: "include" });
   if (!res.ok) throw await readError(res, "Could not load your logs");
   return res.json();
 }
 
-export async function getBorewellObservations(id) {
-  const res = await fetch(`${API}/api/borewells/${id}/observations`, { credentials: "include" });
-  if (!res.ok) throw await readError(res, "Could not load observations");
-  return res.json();
-}
-
-export async function addBorewellObservation(id, payload) {
-  const res = await fetch(`${API}/api/borewells/${id}/observations`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...csrfHeaders() },
-    credentials: "include",
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw await readError(res, "Could not save the observation");
-  return res.json();
-}
-
-// this operator's assigned sites still awaiting a log
 export async function getAssignments() {
   const res = await fetch(`${API}/api/assignments`, { credentials: "include" });
   if (!res.ok) throw await readError(res, "Could not load assigned sites");
   return res.json();
+}
+
+export function rigEvidenceUrl(borewellId, evidenceId) {
+  return `${API}/api/borewells/${encodeURIComponent(borewellId)}/evidence/${encodeURIComponent(evidenceId)}`;
 }
 
 // ---- admin (auth + admin role required) ------------------------------------
@@ -146,7 +140,7 @@ export async function adminGetLogs() {
 export async function adminPatchOperator(id, patch) {
   const res = await fetch(`${API}/api/admin/operators/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", ...csrfHeaders() },
+    headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify(patch),
   });
@@ -157,7 +151,7 @@ export async function adminPatchOperator(id, patch) {
 export async function adminPatchLog(id, patch) {
   const res = await fetch(`${API}/api/admin/logs/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", ...csrfHeaders() },
+    headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify(patch),
   });

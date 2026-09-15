@@ -32,6 +32,7 @@ import {
 import {
   asyncHandler, authLimiter, signinBruteLimiter, notFound, errorHandler,
 } from "./middleware.js";
+import { createPhase8Router } from "./phase8Routes.js";
 
 const app = express();
 app.use(cors({
@@ -90,7 +91,26 @@ app.post(
 app.post("/api/auth/signout", asyncHandler(signout));
 
 // ----------------------------------------------------------------------------
-// 1) LOG A BOREWELL (rig operator submits a completed job = verified outcome)
+// PHASE 8 — production rig-operator data collection.
+// Mounted before the older routes so the new authenticated submission/evidence
+// and verification trust boundary is authoritative without deleting working code.
+// ----------------------------------------------------------------------------
+app.use(createPhase8Router({
+  db,
+  requireAuth,
+  requireAdmin,
+  validate,
+  borewellSchema,
+  adminLogPatchSchema,
+  distanceKm,
+  NEAR_KM,
+}));
+
+// ----------------------------------------------------------------------------
+// 1) LEGACY LOG A BOREWELL HANDLER
+// Phase 8 intercepts POST /api/borewells above. This remains temporarily for
+// reviewability/backward comparison and will be removed only after the stacked
+// Phase 8 review is accepted.
 // ----------------------------------------------------------------------------
 app.post("/api/borewells", requireAuth, validate(borewellSchema), asyncHandler(async (req, res) => {
   const { lat, lng, placeName, depthFt, strata, waterStrikeFt, yieldLpm, success, language } = req.body;
@@ -246,6 +266,8 @@ app.patch("/api/admin/operators/:id", ...admin, validate(adminOperatorPatchSchem
   res.json(safe);
 }));
 
+// Phase 8 intercepts PATCH /api/admin/logs/:id above so verification drives ledger
+// eligibility. The older handler remains here until Phase 8 review is accepted.
 app.patch("/api/admin/logs/:id", ...admin, validate(adminLogPatchSchema), asyncHandler(async (req, res) => {
   const patch = { ...req.body };
   if (patch.flagged === true) {

@@ -5,8 +5,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../auth.jsx";
 
 export default function RequireOperator({ children }) {
-  const { operator, sessionReady } = useAuth();
-  if (!sessionReady) return null;
+  const { operator } = useAuth();
   const location = useLocation();
   if (!operator) {
     return <Navigate to="/signin" state={{ from: location }} replace />;
