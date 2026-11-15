@@ -42,8 +42,8 @@ def synthetic_dataset(rows: int = 36):
 
 
 def test_feature_contract_has_26_phase3_features():
-    assert len(ALL_FEATURES) == 26
-    assert len(NUMERIC_FEATURES) == 22
+    assert len(ALL_FEATURES) == 37
+    assert len(NUMERIC_FEATURES) == 33
     assert len(CATEGORICAL_FEATURES) == 4
 
 

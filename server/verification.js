@@ -189,6 +189,16 @@ export function analyzeSubmission(record, { operatorRecords = [], allRecords = [
     add("OPERATOR_DAILY_BURST", "medium", "operator", "Operator has submitted many borewell outcomes for the same drilling date.", { otherRecords: sameOperatorSameDay.length });
   }
 
+  const survey = record?.geophysicalSurvey || record?.drillDetails?.geophysicalSurvey;
+  if (survey && (survey.surveyType === "1D_VES" || survey.surveyType === "2D_ERT")) {
+    add("VERIFIED_GEOPHYSICAL_SURVEY", "info", "science", "Submission accompanied by 1D VES / 2D ERT geophysical sounding data.", {
+      surveyType: survey.surveyType,
+      apparentResistivityOhmM: survey.apparentResistivityOhmM,
+      weatheredZoneThicknessM: survey.weatheredZoneThicknessM,
+      fractureIndicatedDepthM: survey.fractureIndicatedDepthM,
+    });
+  }
+
   const riskScore = clamp(signals.reduce((sum, signal) => sum + signal.score, 0), 0, 100);
   const blockingSignals = signals.filter((signal) => signal.severity === "high" || signal.severity === "critical");
   const riskLevel = riskScore >= 60 ? "critical" : riskScore >= 35 ? "high" : riskScore >= 15 ? "medium" : riskScore > 0 ? "low" : "clear";
@@ -224,6 +234,10 @@ function recordEvidenceQuality(record) {
     ? Number(record?.waterStrikeFt || 0) === 0 && Number(record?.yieldLpm || 0) === 0
     : record?.success === true && Number(record?.waterStrikeFt) > 0 && Number(record?.yieldLpm) > 0;
   if (completeOutcome) score += 15;
+  const survey = record?.geophysicalSurvey || record?.drillDetails?.geophysicalSurvey;
+  if (survey && (survey.surveyType === "1D_VES" || survey.surveyType === "2D_ERT")) {
+    score += 15;
+  }
   return clamp(score, 0, 100);
 }
 

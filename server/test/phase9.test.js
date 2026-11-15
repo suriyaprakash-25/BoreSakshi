@@ -345,3 +345,28 @@ test("legacy admin verified patch cannot bypass Phase 9 for operator records", a
     assert.equal(store.state().records.find((item) => item.id === "imported-1").datasetEligibility.status, "published_import");
   });
 });
+
+test("Phase 9 micro-geophysical survey ingestion boosts evidence quality and generates science signal", () => {
+  const withoutSurvey = operatorRecord({ verificationStatus: "VERIFIED", verified: true });
+  const withSurvey = operatorRecord({
+    id: "well-geo",
+    verificationStatus: "VERIFIED",
+    verified: true,
+    geophysicalSurvey: {
+      surveyType: "1D_VES",
+      apparentResistivityOhmM: 145,
+      weatheredZoneThicknessM: 18,
+      fractureIndicatedDepthM: 85,
+    },
+  });
+
+  const analysis = analyzeSubmission(withSurvey);
+  const geoSignal = analysis.signals.find((s) => s.code === "VERIFIED_GEOPHYSICAL_SURVEY");
+  assert.ok(geoSignal);
+  assert.equal(geoSignal.severity, "info");
+  assert.equal(geoSignal.details.apparentResistivityOhmM, 145);
+
+  const trustPlain = computeOperatorTrust([withoutSurvey]);
+  const trustWithGeo = computeOperatorTrust([withSurvey]);
+  assert.ok(trustWithGeo.evidenceQualityPct >= trustPlain.evidenceQualityPct);
+});

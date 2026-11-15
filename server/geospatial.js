@@ -15,11 +15,19 @@ export const SUPPORTED_LAYER_KINDS = [
   "watershed",
   "geology",
   "lineaments",
+  "spectralLineaments",
+  "groundwaterPreMonsoon",
+  "groundwaterPostMonsoon",
   "rainfallAnnual",
   "rainfallSeasonal",
   "rainfallRecent",
   "rainfallNormal",
   "rainfallAnomaly",
+  "hand",
+  "twi",
+  "spi3",
+  "spi6",
+  "spi12",
   "ndvi",
   "ndwi",
   "landUse",
@@ -32,6 +40,9 @@ export const DYNAMIC_LAYER_KINDS = new Set([
   "rainfallRecent",
   "rainfallNormal",
   "rainfallAnomaly",
+  "spi3",
+  "spi6",
+  "spi12",
   "ndvi",
   "ndwi",
   "landUse",
@@ -42,6 +53,8 @@ export const ML_FEATURE_NAMES = [
   "terrainSlopeDeg",
   "terrainAspectDeg",
   "terrainCurvature",
+  "terrainHandM",
+  "terrainTwi",
   "hydrologyDistanceToDrainageM",
   "hydrologyDrainageDensityKmPerKm2",
   "hydrologyWatershedId",
@@ -51,10 +64,19 @@ export const ML_FEATURE_NAMES = [
   "geologyLineamentDensityKmPerKm2",
   "geologyDistanceToLineamentM",
   "geologyFractureProximityScore",
+  "geologyLineamentIntersectionDensity",
+  "geologyFaultProximityAngleDeg",
+  "groundwaterDepthPreMonsoonM",
+  "groundwaterDepthPostMonsoonM",
+  "groundwaterSeasonalRiseM",
   "climateAnnualRainfallMm",
   "climateSeasonalRainfallMm",
   "climateRecentRainfallMm",
   "climateRainfallAnomalyPct",
+  "climateSpi3",
+  "climateSpi6",
+  "climateSpi12",
+  "soilClayPercentage",
   "satelliteNdvi",
   "satelliteNdwi",
   "satelliteLandUseClass",
@@ -306,6 +328,102 @@ export function containingFeature(lat, lng, geojson) {
   return null;
 }
 
+function segmentIntersectionPoint(a, b, c, d) {
+  const det = (b.x - a.x) * (d.y - c.y) - (b.y - a.y) * (d.x - c.x);
+  if (Math.abs(det) < 1e-9) return null;
+  const t = ((c.x - a.x) * (d.y - c.y) - (c.y - a.y) * (d.x - c.x)) / det;
+  const u = ((c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x)) / det;
+  if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+    return { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
+  }
+  return null;
+}
+
+export function lineamentIntersectionDensity(lat, lng, geojson, radiusKm = DEFAULT_DENSITY_RADIUS_KM) {
+  const origin = { lat, lng };
+  const radiusM = radiusKm * 1000;
+  const segments = [];
+  for (const line of geoJsonLineStrings(geojson)) {
+    for (let i = 0; i < line.length - 1; i += 1) {
+      const p1 = toLocalMeters(line[i], origin);
+      const p2 = toLocalMeters(line[i + 1], origin);
+      if (Math.hypot(p1.x, p1.y) <= radiusM * 1.5 || Math.hypot(p2.x, p2.y) <= radiusM * 1.5) {
+        segments.push([p1, p2]);
+      }
+    }
+  }
+  let intersectionCount = 0;
+  for (let i = 0; i < segments.length; i += 1) {
+    for (let j = i + 1; j < segments.length; j += 1) {
+      const pt = segmentIntersectionPoint(segments[i][0], segments[i][1], segments[j][0], segments[j][1]);
+      if (pt && Math.hypot(pt.x, pt.y) <= radiusM) {
+        intersectionCount += 1;
+      }
+    }
+  }
+  const areaKm2 = Math.PI * radiusKm * radiusKm;
+  return areaKm2 > 0 ? round(intersectionCount / areaKm2, 6) : 0;
+}
+
+export function faultProximityAngle(lat, lng, geojson, terrainAspectDeg) {
+  const origin = { lat, lng };
+  const p = { x: 0, y: 0 };
+  let closestDist = Infinity;
+  let closestStrikeDeg = null;
+
+  for (const line of geoJsonLineStrings(geojson)) {
+    for (let i = 0; i < line.length - 1; i += 1) {
+      const p1 = toLocalMeters(line[i], origin);
+      const p2 = toLocalMeters(line[i + 1], origin);
+      const dist = pointSegmentDistance(p, p1, p2);
+      if (dist < closestDist) {
+        closestDist = dist;
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        closestStrikeDeg = (Math.atan2(dx, dy) * (180 / Math.PI) + 360) % 180;
+      }
+    }
+  }
+  if (!finite(closestStrikeDeg)) return null;
+  if (!finite(terrainAspectDeg)) return 45.0;
+  const diff = Math.abs(terrainAspectDeg - closestStrikeDeg) % 180;
+  const acuteAngle = Math.min(diff, 180 - diff);
+  return round(acuteAngle, 2);
+}
+
+export function calculateTwi(slopeDeg, flowAccumulation) {
+  const safeSlope = Math.max(Number(slopeDeg || 0) * (Math.PI / 180), 0.005);
+  const safeFlow = Math.max(0, Number(flowAccumulation || 1.0));
+  return round(Math.log((safeFlow + 1.0) / Math.tan(safeSlope)), 4);
+}
+
+export function calculateHand(elevationM, slopeDeg, distanceToDrainageM) {
+  const safeSlope = Math.max(0, Number(slopeDeg || 0)) * (Math.PI / 180);
+  const safeDist = Math.min(Math.max(0, Number(distanceToDrainageM || 0)), 2000);
+  const approxRise = Math.sin(safeSlope) * safeDist * 0.30;
+  return round(Math.max(0, approxRise), 2);
+}
+
+export function deriveGroundwaterPriors({ elevationM, distanceToDrainageM, slopeDeg, annualRainfallMm } = {}) {
+  const slope = finite(slopeDeg) ? Math.max(0, slopeDeg) : 2.5;
+  const drainDist = finite(distanceToDrainageM) ? Math.max(0, distanceToDrainageM) : 400;
+  const rain = finite(annualRainfallMm) ? annualRainfallMm : 780;
+  const preM = round(Math.min(35.0, Math.max(2.0, 7.5 + 0.005 * drainDist + 0.02 * slope)), 2);
+  const risePotential = 2.2 + 0.0025 * Math.max(0, rain - 500);
+  const postM = round(Math.max(1.0, preM - risePotential), 2);
+  return { preM, postM, riseM: round(preM - postM, 2) };
+}
+
+export function deriveSoilClay({ formation, lithology, landUse } = {}) {
+  const text = `${formation || ""} ${lithology || ""} ${landUse || ""}`.toLowerCase();
+  if (text.includes("clay") || text.includes("black")) return 42.0;
+  if (text.includes("charnockite")) return 33.5;
+  if (text.includes("gneiss")) return 27.0;
+  if (text.includes("granite")) return 23.5;
+  if (text.includes("alluvium")) return 19.0;
+  return 26.0;
+}
+
 export function spatialBlockId(lat, lng, blockDeg = DEFAULT_SPATIAL_BLOCK_DEG) {
   if (!finite(lat) || !finite(lng) || !finite(blockDeg) || blockDeg <= 0) return null;
   const latBlock = Math.floor((lat + 90) / blockDeg);
@@ -491,6 +609,43 @@ export function extractGeospatialFeatures({
     for (const name of ["geologyDistanceToLineamentM", "geologyLineamentDensityKmPerKm2", "geologyFractureProximityScore"]) sourceTrace[name] = sourceInfo(lineaments);
   }
 
+  const spectralLineaments = selectLayer(layers, "spectralLineaments", asOf) || lineaments;
+  if (spectralLineaments?.data) {
+    feature.geologyLineamentIntersectionDensity = lineamentIntersectionDensity(lat, lng, spectralLineaments.data, densityRadiusKm);
+    feature.geologyFaultProximityAngleDeg = faultProximityAngle(lat, lng, spectralLineaments.data, feature.terrainAspectDeg);
+    sourceTrace.geologyLineamentIntersectionDensity = sourceInfo(spectralLineaments);
+    sourceTrace.geologyFaultProximityAngleDeg = sourceInfo(spectralLineaments);
+  } else {
+    feature.geologyLineamentIntersectionDensity = 0.0;
+    feature.geologyFaultProximityAngleDeg = 45.0;
+    sourceTrace.geologyLineamentIntersectionDensity = { kind: "fallback_baseline" };
+    sourceTrace.geologyFaultProximityAngleDeg = { kind: "fallback_baseline" };
+  }
+
+  const handLayer = selectLayer(layers, "hand", asOf);
+  if (handLayer?.data) {
+    feature.terrainHandM = layerValue(handLayer, lat, lng);
+    sourceTrace.terrainHandM = sourceInfo(handLayer);
+  } else if (finite(feature.terrainSlopeDeg) && finite(feature.hydrologyDistanceToDrainageM)) {
+    feature.terrainHandM = calculateHand(feature.terrainElevationM, feature.terrainSlopeDeg, feature.hydrologyDistanceToDrainageM);
+    sourceTrace.terrainHandM = { derivedFrom: ["terrainElevationM", "terrainSlopeDeg", "hydrologyDistanceToDrainageM"] };
+  } else if (finite(feature.terrainElevationM)) {
+    feature.terrainHandM = round(Math.max(0, feature.terrainElevationM * 0.05), 2);
+    sourceTrace.terrainHandM = { derivedFrom: ["terrainElevationM"] };
+  }
+
+  const twiLayer = selectLayer(layers, "twi", asOf);
+  if (twiLayer?.data) {
+    feature.terrainTwi = layerValue(twiLayer, lat, lng);
+    sourceTrace.terrainTwi = sourceInfo(twiLayer);
+  } else if (finite(feature.terrainSlopeDeg) && finite(feature.hydrologyFlowAccumulation)) {
+    feature.terrainTwi = calculateTwi(feature.terrainSlopeDeg, feature.hydrologyFlowAccumulation);
+    sourceTrace.terrainTwi = { derivedFrom: ["terrainSlopeDeg", "hydrologyFlowAccumulation"] };
+  } else if (finite(feature.terrainSlopeDeg)) {
+    feature.terrainTwi = calculateTwi(feature.terrainSlopeDeg, 5.0);
+    sourceTrace.terrainTwi = { derivedFrom: ["terrainSlopeDeg"] };
+  }
+
   const annual = selectLayer(layers, "rainfallAnnual", asOf);
   const seasonal = selectLayer(layers, "rainfallSeasonal", asOf);
   const recent = selectLayer(layers, "rainfallRecent", asOf);
@@ -508,6 +663,81 @@ export function extractGeospatialFeatures({
       feature.climateRainfallAnomalyPct = round(((feature.climateAnnualRainfallMm - normalValue) / normalValue) * 100, 4);
       sourceTrace.climateRainfallAnomalyPct = { derivedFrom: [sourceInfo(annual), sourceInfo(normal)] };
     }
+  }
+
+  const gwPre = selectLayer(layers, "groundwaterPreMonsoon", asOf);
+  const gwPost = selectLayer(layers, "groundwaterPostMonsoon", asOf);
+  if (gwPre) {
+    feature.groundwaterDepthPreMonsoonM = layerValue(gwPre, lat, lng);
+    sourceTrace.groundwaterDepthPreMonsoonM = sourceInfo(gwPre);
+  }
+  if (gwPost) {
+    feature.groundwaterDepthPostMonsoonM = layerValue(gwPost, lat, lng);
+    sourceTrace.groundwaterDepthPostMonsoonM = sourceInfo(gwPost);
+  }
+  if (!finite(feature.groundwaterDepthPreMonsoonM) || !finite(feature.groundwaterDepthPostMonsoonM)) {
+    const priors = deriveGroundwaterPriors({
+      elevationM: feature.terrainElevationM,
+      distanceToDrainageM: feature.hydrologyDistanceToDrainageM,
+      slopeDeg: feature.terrainSlopeDeg,
+      annualRainfallMm: feature.climateAnnualRainfallMm,
+    });
+    if (!finite(feature.groundwaterDepthPreMonsoonM)) {
+      feature.groundwaterDepthPreMonsoonM = priors.preM;
+      sourceTrace.groundwaterDepthPreMonsoonM = { kind: "cgwb_hydrodynamic_prior" };
+    }
+    if (!finite(feature.groundwaterDepthPostMonsoonM)) {
+      feature.groundwaterDepthPostMonsoonM = priors.postM;
+      sourceTrace.groundwaterDepthPostMonsoonM = { kind: "cgwb_hydrodynamic_prior" };
+    }
+  }
+  if (finite(feature.groundwaterDepthPreMonsoonM) && finite(feature.groundwaterDepthPostMonsoonM)) {
+    feature.groundwaterSeasonalRiseM = round(feature.groundwaterDepthPreMonsoonM - feature.groundwaterDepthPostMonsoonM, 2);
+    sourceTrace.groundwaterSeasonalRiseM = { derivedFrom: ["groundwaterDepthPreMonsoonM", "groundwaterDepthPostMonsoonM"] };
+  }
+
+  const spi3 = selectLayer(layers, "spi3", asOf);
+  const spi6 = selectLayer(layers, "spi6", asOf);
+  const spi12 = selectLayer(layers, "spi12", asOf);
+  if (spi3) { feature.climateSpi3 = layerValue(spi3, lat, lng); sourceTrace.climateSpi3 = sourceInfo(spi3); }
+  else if (finite(feature.climateRainfallAnomalyPct)) {
+    feature.climateSpi3 = round(Math.min(3.5, Math.max(-3.5, (feature.climateRainfallAnomalyPct * 1.1) / 28.0)), 3);
+    sourceTrace.climateSpi3 = { derivedFrom: ["climateRainfallAnomalyPct"] };
+  } else {
+    feature.climateSpi3 = 0.0;
+    sourceTrace.climateSpi3 = { kind: "climatological_neutral_spi" };
+  }
+
+  if (spi6) { feature.climateSpi6 = layerValue(spi6, lat, lng); sourceTrace.climateSpi6 = sourceInfo(spi6); }
+  else if (finite(feature.climateRainfallAnomalyPct)) {
+    feature.climateSpi6 = round(Math.min(3.5, Math.max(-3.5, feature.climateRainfallAnomalyPct / 28.0)), 3);
+    sourceTrace.climateSpi6 = { derivedFrom: ["climateRainfallAnomalyPct"] };
+  } else {
+    feature.climateSpi6 = 0.0;
+    sourceTrace.climateSpi6 = { kind: "climatological_neutral_spi" };
+  }
+
+  if (spi12) { feature.climateSpi12 = layerValue(spi12, lat, lng); sourceTrace.climateSpi12 = sourceInfo(spi12); }
+  else if (finite(feature.climateRainfallAnomalyPct)) {
+    feature.climateSpi12 = round(Math.min(3.5, Math.max(-3.5, (feature.climateRainfallAnomalyPct * 0.9) / 28.0)), 3);
+    sourceTrace.climateSpi12 = { derivedFrom: ["climateRainfallAnomalyPct"] };
+  } else {
+    feature.climateSpi12 = 0.0;
+    sourceTrace.climateSpi12 = { kind: "climatological_neutral_spi" };
+  }
+
+  const soil = selectLayer(layers, "soil", asOf);
+  if (soil) {
+    feature.soilClayPercentage = layerValue(soil, lat, lng, { property: "clay" });
+    sourceTrace.soilClayPercentage = sourceInfo(soil);
+  }
+  if (!finite(feature.soilClayPercentage)) {
+    feature.soilClayPercentage = deriveSoilClay({
+      formation: feature.geologyFormation,
+      lithology: feature.geologyLithology,
+      landUse: feature.satelliteLandUseClass,
+    });
+    sourceTrace.soilClayPercentage = { kind: "vadose_soil_prior" };
   }
 
   const ndvi = selectLayer(layers, "ndvi", asOf);

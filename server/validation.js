@@ -79,6 +79,15 @@ export const WATER_STRIKE_LIMIT = 12;
 export const DRILLING_STOP_REASONS = ["water_found", "budget", "rock_too_hard", "equipment", "gave_up_no_water", "other"];
 export const YIELD_METHODS = ["timed_container", "flow_meter", "airlift_estimate", "visual_estimate", "not_measured"];
 export const SITE_CHOICE_METHODS = ["diviner", "geophysical_survey", "near_working_well", "farmer_choice", "boresakshi", "other"];
+export const GEOPHYSICAL_SURVEY_TYPES = ["NONE", "1D_VES", "2D_ERT", "WATER_DIVINER", "OTHER"];
+
+export const geophysicalSurveySchema = z.object({
+  surveyType: z.enum(GEOPHYSICAL_SURVEY_TYPES).default("NONE"),
+  apparentResistivityOhmM: z.number().min(0).max(100000).nullable().optional(),
+  weatheredZoneThicknessM: z.number().min(0).max(500).nullable().optional(),
+  fractureIndicatedDepthM: z.number().min(0).max(2000).nullable().optional(),
+  surveyAgencyOrGeologist: z.string().trim().max(120).optional(),
+}).strict().optional();
 
 const waterStrikeSchema = z.object({
   depthFt: z.number().positive().max(5000),
@@ -113,6 +122,7 @@ export const borewellSchema = z.object({
   yieldMethod: z.enum(YIELD_METHODS).optional(),
   siteChosenBy: z.enum(SITE_CHOICE_METHODS).optional(),
   depthToHardRockFt: z.number().min(0).max(5000).nullable().optional(),
+  geophysicalSurvey: geophysicalSurveySchema,
 }).superRefine((data, ctx) => {
   for (const [index, strike] of (data.waterStrikes || []).entries()) {
     if (strike.depthFt > data.depthFt) {

@@ -66,8 +66,8 @@ def valid_prediction() -> dict:
 
 
 def test_release_feature_contract_is_exact_and_never_uses_raw_location_or_labels():
-    assert len(ALL_FEATURES) == 26
-    assert len(NUMERIC_FEATURES) == 22
+    assert len(ALL_FEATURES) == 37
+    assert len(NUMERIC_FEATURES) == 33
     assert len(CATEGORICAL_FEATURES) == 4
     assert not {"lat", "lng", "success", "depthFt", "waterStrikeFt", "yieldLpm", "labels"}.intersection(ALL_FEATURES)
     assert TASKS["depth"]["label"] == "waterStrikeFt"

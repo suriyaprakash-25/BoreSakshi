@@ -68,6 +68,8 @@ FEATURE_LABELS = {
     "terrainSlopeDeg": "Terrain slope",
     "terrainAspectDeg": "Terrain aspect",
     "terrainCurvature": "Terrain curvature",
+    "terrainHandM": "Height above nearest drainage (HAND)",
+    "terrainTwi": "Topographic wetness index (TWI)",
     "hydrologyDistanceToDrainageM": "Distance to drainage",
     "hydrologyDrainageDensityKmPerKm2": "Drainage density",
     "hydrologyWatershedId": "Watershed",
@@ -77,10 +79,19 @@ FEATURE_LABELS = {
     "geologyLineamentDensityKmPerKm2": "Lineament density",
     "geologyDistanceToLineamentM": "Distance to lineament",
     "geologyFractureProximityScore": "Fracture proximity",
+    "geologyLineamentIntersectionDensity": "Fracture intersection density",
+    "geologyFaultProximityAngleDeg": "Fault proximity angle",
+    "groundwaterDepthPreMonsoonM": "Pre-monsoon water table depth",
+    "groundwaterDepthPostMonsoonM": "Post-monsoon water table depth",
+    "groundwaterSeasonalRiseM": "Seasonal water table recharge rise",
     "climateAnnualRainfallMm": "Annual rainfall",
     "climateSeasonalRainfallMm": "Seasonal rainfall",
     "climateRecentRainfallMm": "Recent rainfall",
     "climateRainfallAnomalyPct": "Rainfall anomaly",
+    "climateSpi3": "Standardized precipitation index (SPI-3)",
+    "climateSpi6": "Standardized precipitation index (SPI-6)",
+    "climateSpi12": "Standardized precipitation index (SPI-12)",
+    "soilClayPercentage": "Soil clay percentage",
     "satelliteNdvi": "Vegetation index (NDVI)",
     "satelliteNdwi": "Water index (NDWI)",
     "satelliteLandUseClass": "Land-use class",
@@ -254,6 +265,17 @@ class ServingBundle:
         yield_interval = self.tasks["yield"].auxiliary["interval"]
         depth_radius = max(0.0, float(depth_interval["radius"]))
         yield_radius = max(0.0, float(yield_interval["radius"]))
+
+        # Multi-task hydrogeological co-dependence:
+        # Low strike probability strictly caps expected yield potential
+        if calibrated_probability < 0.25:
+            yield_value = min(yield_value, 20.0)
+            yield_radius = min(yield_radius, 15.0)
+        frac_density = float(features.get("geologyLineamentDensityKmPerKm2") or 0.0)
+        if depth_value < 120.0 and frac_density < 0.05:
+            yield_value = min(yield_value, 40.0)
+        if yield_value > 60.0 and depth_value < 60.0:
+            depth_value = max(depth_value, 80.0)
 
         max_class_probability = max(calibrated_probability, 1 - calibrated_probability)
         normalized_entropy = _entropy(calibrated_probability)

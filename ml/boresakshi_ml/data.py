@@ -24,9 +24,9 @@ def load_feature_dataset(path: str | Path) -> dict[str, Any]:
 def validate_feature_dataset(dataset: dict[str, Any]) -> None:
     if not isinstance(dataset, dict):
         raise DatasetContractError("feature dataset must be a JSON object")
-    if dataset.get("featureSchemaVersion") != FEATURE_SCHEMA_VERSION:
+    if dataset.get("featureSchemaVersion") not in {FEATURE_SCHEMA_VERSION, "1.0.0"}:
         raise DatasetContractError(
-            f"featureSchemaVersion must be {FEATURE_SCHEMA_VERSION}; got {dataset.get('featureSchemaVersion')!r}"
+            f"featureSchemaVersion must be {FEATURE_SCHEMA_VERSION} or '1.0.0'; got {dataset.get('featureSchemaVersion')!r}"
         )
     if not str(dataset.get("datasetVersion") or "").strip():
         raise DatasetContractError("datasetVersion is required")

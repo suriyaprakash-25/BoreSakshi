@@ -5,7 +5,7 @@ import { Link, useLocation } from "react-router-dom";
 import {
   Droplets, DropletOff, LocateFixed, Mic, Scale, MapPin, Ruler,
   Layers, Waves, ArrowRight, RotateCcw, CalendarDays, Camera,
-  Video, Plus, Trash2, ShieldCheck,
+  Video, Plus, Trash2, ShieldCheck, Activity,
 } from "lucide-react";
 import AppHeader from "../components/AppHeader.jsx";
 import { useAuth } from "../auth.jsx";
@@ -36,11 +36,14 @@ const EMPTY = {
   lat: "", lng: "", placeName: "", drillingDate: TODAY,
   depthFt: "", waterStrikeFt: "", yieldLpm: "", predictionId: "",
   depthToHardRockFt: "", stopReason: "", yieldMethod: "", siteChosenBy: "",
+  surveyType: "NONE", apparentResistivityOhmM: "", weatheredZoneThicknessM: "",
+  fractureIndicatedDepthM: "", surveyAgencyOrGeologist: "",
 };
 
 const STOP_REASONS = ["water_found", "budget", "rock_too_hard", "equipment", "gave_up_no_water", "other"];
 const YIELD_METHODS = ["timed_container", "flow_meter", "airlift_estimate", "visual_estimate", "not_measured"];
 const SITE_METHODS = ["diviner", "geophysical_survey", "near_working_well", "farmer_choice", "boresakshi", "other"];
+const GEOPHYSICAL_SURVEY_OPTIONS = ["NONE", "1D_VES", "2D_ERT", "WATER_DIVINER", "OTHER"];
 
 const emptyLayer = (fromFt = "0") => ({ fromFt, toFt: "", material: "", notes: "" });
 
@@ -244,6 +247,15 @@ export default function OperatorLog() {
       ...(form.yieldMethod ? { yieldMethod: form.yieldMethod } : {}),
       ...(form.siteChosenBy ? { siteChosenBy: form.siteChosenBy } : {}),
       ...(form.depthToHardRockFt !== "" ? { depthToHardRockFt: Number(form.depthToHardRockFt) } : {}),
+      ...(form.surveyType && form.surveyType !== "NONE" ? {
+        geophysicalSurvey: {
+          surveyType: form.surveyType,
+          apparentResistivityOhmM: form.apparentResistivityOhmM !== "" ? Number(form.apparentResistivityOhmM) : null,
+          weatheredZoneThicknessM: form.weatheredZoneThicknessM !== "" ? Number(form.weatheredZoneThicknessM) : null,
+          fractureIndicatedDepthM: form.fractureIndicatedDepthM !== "" ? Number(form.fractureIndicatedDepthM) : null,
+          ...(form.surveyAgencyOrGeologist?.trim() ? { surveyAgencyOrGeologist: form.surveyAgencyOrGeologist.trim() } : {}),
+        },
+      } : {}),
     };
     const tokens = evidence.filter((item) => item.token).map((item) => item.token);
     const files = evidence.filter((item) => item.file).map((item) => item.file);
@@ -449,6 +461,30 @@ export default function OperatorLog() {
           <label className="op-label">{t("log.predictionCode")}</label>
           <input className="op-input" value={form.predictionId} onChange={(e) => set("predictionId", e.target.value)} maxLength={32} autoCapitalize="off" autoCorrect="off" spellCheck={false} />
           <p className="op-voice-note">{t("log.predictionCodeHelp")}</p>
+        </div>
+
+        <div className="op-field phase8-geophysics">
+          <div className="phase8-section-head">
+            <label className="op-label"><Activity size={15} strokeWidth={2.2} /> {t("log.geophysicsTitle")}</label>
+          </div>
+          <p className="op-voice-note">{t("log.geophysicsHelp")}</p>
+          <Choice label={t("log.surveyType")} value={form.surveyType} onChange={(v) => set("surveyType", v)} options={GEOPHYSICAL_SURVEY_OPTIONS} prefix="survey" />
+          {form.surveyType && form.surveyType !== "NONE" && (
+            <>
+              <div className="op-row">
+                <Field label={t("log.resistivity")} field="apparentResistivityOhmM" form={form} set={set}
+                  numeric listeningField={listeningField} dictate={dictate} placeholder="e.g. 140" />
+                <Field label={t("log.weatheredThickness")} field="weatheredZoneThicknessM" form={form} set={set}
+                  numeric listeningField={listeningField} dictate={dictate} placeholder="e.g. 18" />
+              </div>
+              <div className="op-row">
+                <Field label={t("log.fractureDepth")} field="fractureIndicatedDepthM" form={form} set={set}
+                  numeric listeningField={listeningField} dictate={dictate} placeholder="e.g. 85" />
+                <Field label={t("log.surveyAgency")} field="surveyAgencyOrGeologist" form={form} set={set}
+                  listeningField={listeningField} dictate={dictate} placeholder="e.g. Hydrogeologist / Agency" />
+              </div>
+            </>
+          )}
         </div>
 
         <div className="op-field phase8-evidence">

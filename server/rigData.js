@@ -46,7 +46,9 @@ export function buildOperatorBorewellRecord({ id, body, operator, evidence, subm
       yieldMethod: body.yieldMethod || null,
       siteChosenBy: body.siteChosenBy || null,
       depthToHardRockFt: body.depthToHardRockFt ?? null,
+      geophysicalSurvey: body.geophysicalSurvey || { surveyType: "NONE" },
     },
+    geophysicalSurvey: body.geophysicalSurvey || { surveyType: "NONE" },
     // G1: authenticated app record with GPS and photo evidence.
     confidenceGrade: "G1",
     followUps: [],

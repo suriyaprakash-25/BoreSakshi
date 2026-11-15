@@ -19,6 +19,9 @@ DYNAMIC_LAYER_KINDS = {
     "rainfallRecent",
     "rainfallNormal",
     "rainfallAnomaly",
+    "spi3",
+    "spi6",
+    "spi12",
     "ndvi",
     "ndwi",
     "landUse",
@@ -31,11 +34,19 @@ SUPPORTED_LAYER_KINDS = {
     "watershed",
     "geology",
     "lineaments",
+    "spectralLineaments",
+    "groundwaterPreMonsoon",
+    "groundwaterPostMonsoon",
     "rainfallAnnual",
     "rainfallSeasonal",
     "rainfallRecent",
     "rainfallNormal",
     "rainfallAnomaly",
+    "hand",
+    "twi",
+    "spi3",
+    "spi6",
+    "spi12",
     "ndvi",
     "ndwi",
     "landUse",
@@ -309,6 +320,94 @@ def haversine_km(a: dict[str, float], b: dict[str, float]) -> float:
     return 2 * earth * math.asin(math.sqrt(h))
 
 
+def _segment_intersection_point(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float], d: tuple[float, float]) -> tuple[float, float] | None:
+    det = (b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0])
+    if abs(det) < 1e-9:
+        return None
+    t = ((c[0] - a[0]) * (d[1] - c[1]) - (c[1] - a[1]) * (d[0] - c[0])) / det
+    u = ((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0])) / det
+    if 0.0 <= t <= 1.0 and 0.0 <= u <= 1.0:
+        return (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]))
+    return None
+
+
+def lineament_intersection_density(lat: float, lng: float, geojson: dict[str, Any], radius_km: float = 2.0) -> float:
+    radius_m = radius_km * 1000
+    segments = []
+    for line in _line_strings(geojson):
+        for i in range(len(line) - 1):
+            p1 = _local_meters(line[i], lat, lng)
+            p2 = _local_meters(line[i + 1], lat, lng)
+            if math.hypot(p1[0], p1[1]) <= radius_m * 1.5 or math.hypot(p2[0], p2[1]) <= radius_m * 1.5:
+                segments.append((p1, p2))
+    intersections = 0
+    for i in range(len(segments)):
+        for j in range(i + 1, len(segments)):
+            pt = _segment_intersection_point(segments[i][0], segments[i][1], segments[j][0], segments[j][1])
+            if pt and math.hypot(pt[0], pt[1]) <= radius_m:
+                intersections += 1
+    area_km2 = math.pi * radius_km * radius_km
+    return _round(intersections / area_km2, 6) or 0.0
+
+
+def fault_proximity_angle(lat: float, lng: float, geojson: dict[str, Any], aspect_deg: float | None) -> float:
+    closest_dist = float("inf")
+    closest_strike = None
+    for line in _line_strings(geojson):
+        for i in range(len(line) - 1):
+            p1 = _local_meters(line[i], lat, lng)
+            p2 = _local_meters(line[i + 1], lat, lng)
+            dist = _point_segment_distance((0.0, 0.0), p1, p2)
+            if dist < closest_dist:
+                closest_dist = dist
+                dx = p2[0] - p1[0]
+                dy = p2[1] - p1[1]
+                closest_strike = (math.degrees(math.atan2(dx, dy)) + 360) % 180
+    if closest_strike is None:
+        return 45.0
+    if aspect_deg is None or not math.isfinite(aspect_deg):
+        return 45.0
+    diff = abs(aspect_deg - closest_strike) % 180
+    return _round(min(diff, 180 - diff), 2) or 45.0
+
+
+def calculate_twi(slope_deg: float | None, flow_acc: float | None) -> float:
+    safe_slope = max(math.radians(float(slope_deg or 0)), 0.005)
+    safe_flow = max(0.0, float(flow_acc or 1.0))
+    return _round(math.log((safe_flow + 1.0) / math.tan(safe_slope)), 4) or 8.0
+
+
+def calculate_hand(elevation_m: float | None, slope_deg: float | None, distance_to_drainage_m: float | None) -> float:
+    safe_slope = max(0.0, math.radians(float(slope_deg or 0)))
+    safe_dist = min(max(0.0, float(distance_to_drainage_m or 0)), 2000.0)
+    return _round(math.sin(safe_slope) * safe_dist * 0.30, 2) or 0.0
+
+
+def derive_groundwater_priors(elevation_m: float | None, distance_to_drainage_m: float | None, slope_deg: float | None, annual_rainfall_mm: float | None) -> tuple[float, float, float]:
+    slope = max(0.0, float(slope_deg)) if slope_deg is not None and math.isfinite(slope_deg) else 2.5
+    drain = max(0.0, float(distance_to_drainage_m)) if distance_to_drainage_m is not None and math.isfinite(distance_to_drainage_m) else 400.0
+    rain = float(annual_rainfall_mm) if annual_rainfall_mm is not None and math.isfinite(annual_rainfall_mm) else 780.0
+    pre_m = min(35.0, max(2.0, 7.5 + 0.005 * drain + 0.02 * slope))
+    rise = 2.2 + 0.0025 * max(0.0, rain - 500.0)
+    post_m = max(1.0, pre_m - rise)
+    return _round(pre_m, 2) or 8.5, _round(post_m, 2) or 5.5, _round(pre_m - post_m, 2) or 3.0
+
+
+def derive_soil_clay(formation: str | None, lithology: str | None, land_use: str | None) -> float:
+    text = f"{formation or ''} {lithology or ''} {land_use or ''}".lower()
+    if "clay" in text or "black" in text:
+        return 42.0
+    if "charnockite" in text:
+        return 33.5
+    if "gneiss" in text:
+        return 27.0
+    if "granite" in text:
+        return 23.5
+    if "alluvium" in text:
+        return 19.0
+    return 26.0
+
+
 @dataclass(frozen=True)
 class LoadedLayer:
     meta: dict[str, Any]
@@ -466,6 +565,40 @@ class FeatureExtractor:
             for name in ("geologyDistanceToLineamentM", "geologyLineamentDensityKmPerKm2", "geologyFractureProximityScore"):
                 trace[name] = lineaments.meta["id"]
 
+        spectral_lineaments = self._select("spectralLineaments", as_of) or lineaments
+        if spectral_lineaments:
+            features["geologyLineamentIntersectionDensity"] = lineament_intersection_density(lat, lng, spectral_lineaments.data, self.density_radius_km)
+            features["geologyFaultProximityAngleDeg"] = fault_proximity_angle(lat, lng, spectral_lineaments.data, features.get("terrainAspectDeg"))
+            trace["geologyLineamentIntersectionDensity"] = spectral_lineaments.meta["id"]
+            trace["geologyFaultProximityAngleDeg"] = spectral_lineaments.meta["id"]
+        else:
+            features["geologyLineamentIntersectionDensity"] = 0.0
+            features["geologyFaultProximityAngleDeg"] = 45.0
+            trace["geologyLineamentIntersectionDensity"] = "fallback_baseline"
+            trace["geologyFaultProximityAngleDeg"] = "fallback_baseline"
+
+        hand = self._select("hand", as_of)
+        if hand:
+            features["terrainHandM"] = self._layer_value(hand, lat, lng)
+            trace["terrainHandM"] = hand.meta["id"]
+        elif features.get("terrainSlopeDeg") is not None and features.get("hydrologyDistanceToDrainageM") is not None:
+            features["terrainHandM"] = calculate_hand(features.get("terrainElevationM"), features.get("terrainSlopeDeg"), features.get("hydrologyDistanceToDrainageM"))
+            trace["terrainHandM"] = ["terrainElevationM", "terrainSlopeDeg", "hydrologyDistanceToDrainageM"]
+        elif features.get("terrainElevationM") is not None:
+            features["terrainHandM"] = _round(max(0.0, float(features["terrainElevationM"]) * 0.05), 2)
+            trace["terrainHandM"] = ["terrainElevationM"]
+
+        twi = self._select("twi", as_of)
+        if twi:
+            features["terrainTwi"] = self._layer_value(twi, lat, lng)
+            trace["terrainTwi"] = twi.meta["id"]
+        elif features.get("terrainSlopeDeg") is not None and features.get("hydrologyFlowAccumulation") is not None:
+            features["terrainTwi"] = calculate_twi(features.get("terrainSlopeDeg"), features.get("hydrologyFlowAccumulation"))
+            trace["terrainTwi"] = ["terrainSlopeDeg", "hydrologyFlowAccumulation"]
+        elif features.get("terrainSlopeDeg") is not None:
+            features["terrainTwi"] = calculate_twi(features.get("terrainSlopeDeg"), 5.0)
+            trace["terrainTwi"] = ["terrainSlopeDeg"]
+
         mappings = {
             "rainfallAnnual": "climateAnnualRainfallMm",
             "rainfallSeasonal": "climateSeasonalRainfallMm",
@@ -491,6 +624,80 @@ class FeatureExtractor:
             if isinstance(annual_value, (int, float)) and isinstance(normal_value, (int, float)) and normal_value != 0:
                 features["climateRainfallAnomalyPct"] = _round(((annual_value - normal_value) / normal_value) * 100, 4)
                 trace["climateRainfallAnomalyPct"] = [annual.meta["id"], normal.meta["id"]]
+
+        gw_pre = self._select("groundwaterPreMonsoon", as_of)
+        gw_post = self._select("groundwaterPostMonsoon", as_of)
+        if gw_pre:
+            features["groundwaterDepthPreMonsoonM"] = self._layer_value(gw_pre, lat, lng)
+            trace["groundwaterDepthPreMonsoonM"] = gw_pre.meta["id"]
+        if gw_post:
+            features["groundwaterDepthPostMonsoonM"] = self._layer_value(gw_post, lat, lng)
+            trace["groundwaterDepthPostMonsoonM"] = gw_post.meta["id"]
+
+        if features.get("groundwaterDepthPreMonsoonM") is None or features.get("groundwaterDepthPostMonsoonM") is None:
+            pre_m, post_m, rise_m = derive_groundwater_priors(
+                features.get("terrainElevationM"),
+                features.get("hydrologyDistanceToDrainageM"),
+                features.get("terrainSlopeDeg"),
+                features.get("climateAnnualRainfallMm"),
+            )
+            if features.get("groundwaterDepthPreMonsoonM") is None:
+                features["groundwaterDepthPreMonsoonM"] = pre_m
+                trace["groundwaterDepthPreMonsoonM"] = "cgwb_hydrodynamic_prior"
+            if features.get("groundwaterDepthPostMonsoonM") is None:
+                features["groundwaterDepthPostMonsoonM"] = post_m
+                trace["groundwaterDepthPostMonsoonM"] = "cgwb_hydrodynamic_prior"
+
+        if features.get("groundwaterDepthPreMonsoonM") is not None and features.get("groundwaterDepthPostMonsoonM") is not None:
+            features["groundwaterSeasonalRiseM"] = _round(
+                float(features["groundwaterDepthPreMonsoonM"]) - float(features["groundwaterDepthPostMonsoonM"]), 2
+            )
+            trace["groundwaterSeasonalRiseM"] = ["groundwaterDepthPreMonsoonM", "groundwaterDepthPostMonsoonM"]
+
+        spi3 = self._select("spi3", as_of)
+        spi6 = self._select("spi6", as_of)
+        spi12 = self._select("spi12", as_of)
+        if spi3:
+            features["climateSpi3"] = self._layer_value(spi3, lat, lng)
+            trace["climateSpi3"] = spi3.meta["id"]
+        elif features.get("climateRainfallAnomalyPct") is not None:
+            features["climateSpi3"] = _round(max(-3.5, min(3.5, (float(features["climateRainfallAnomalyPct"]) * 1.1) / 28.0)), 3)
+            trace["climateSpi3"] = ["climateRainfallAnomalyPct"]
+        else:
+            features["climateSpi3"] = 0.0
+            trace["climateSpi3"] = "climatological_neutral_spi"
+
+        if spi6:
+            features["climateSpi6"] = self._layer_value(spi6, lat, lng)
+            trace["climateSpi6"] = spi6.meta["id"]
+        elif features.get("climateRainfallAnomalyPct") is not None:
+            features["climateSpi6"] = _round(max(-3.5, min(3.5, float(features["climateRainfallAnomalyPct"]) / 28.0)), 3)
+            trace["climateSpi6"] = ["climateRainfallAnomalyPct"]
+        else:
+            features["climateSpi6"] = 0.0
+            trace["climateSpi6"] = "climatological_neutral_spi"
+
+        if spi12:
+            features["climateSpi12"] = self._layer_value(spi12, lat, lng)
+            trace["climateSpi12"] = spi12.meta["id"]
+        elif features.get("climateRainfallAnomalyPct") is not None:
+            features["climateSpi12"] = _round(max(-3.5, min(3.5, (float(features["climateRainfallAnomalyPct"]) * 0.9) / 28.0)), 3)
+            trace["climateSpi12"] = ["climateRainfallAnomalyPct"]
+        else:
+            features["climateSpi12"] = 0.0
+            trace["climateSpi12"] = "climatological_neutral_spi"
+
+        soil = self._select("soil", as_of)
+        if soil:
+            features["soilClayPercentage"] = self._layer_value(soil, lat, lng, property_name="clay")
+            trace["soilClayPercentage"] = soil.meta["id"]
+        if features.get("soilClayPercentage") is None:
+            features["soilClayPercentage"] = derive_soil_clay(
+                features.get("geologyFormation"),
+                features.get("geologyLithology"),
+                features.get("satelliteLandUseClass"),
+            )
+            trace["soilClayPercentage"] = "vadose_soil_prior"
 
         land_use = self._select("landUse", as_of)
         if land_use:

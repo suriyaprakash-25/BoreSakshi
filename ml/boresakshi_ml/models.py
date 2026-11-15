@@ -4,7 +4,12 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import (
+    HistGradientBoostingClassifier,
+    HistGradientBoostingRegressor,
+    RandomForestClassifier,
+    RandomForestRegressor,
+)
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.pipeline import Pipeline
@@ -31,6 +36,44 @@ else:
     LGBM_IMPORT_ERROR = ""
 
 
+# Hydrogeologically enforced physical monotonic directions
+PHYSICAL_MONOTONE_CONSTRAINTS = {
+    "success": {
+        "numeric__terrainSlopeDeg": -1,
+        "numeric__geologyDistanceToLineamentM": -1,
+        "numeric__hydrologyDistanceToDrainageM": -1,
+        "numeric__terrainHandM": -1,
+        "numeric__soilClayPercentage": -1,
+        "numeric__terrainTwi": 1,
+        "numeric__geologyLineamentDensityKmPerKm2": 1,
+        "numeric__geologyLineamentIntersectionDensity": 1,
+        "numeric__climateSpi6": 1,
+        "numeric__groundwaterSeasonalRiseM": 1,
+    },
+    "yield": {
+        "numeric__terrainSlopeDeg": -1,
+        "numeric__geologyDistanceToLineamentM": -1,
+        "numeric__hydrologyDistanceToDrainageM": -1,
+        "numeric__terrainHandM": -1,
+        "numeric__soilClayPercentage": -1,
+        "numeric__terrainTwi": 1,
+        "numeric__geologyLineamentDensityKmPerKm2": 1,
+        "numeric__geologyLineamentIntersectionDensity": 1,
+        "numeric__climateSpi6": 1,
+        "numeric__groundwaterSeasonalRiseM": 1,
+    },
+    "depth": {
+        "numeric__terrainSlopeDeg": 1,
+        "numeric__geologyDistanceToLineamentM": 1,
+        "numeric__hydrologyDistanceToDrainageM": 1,
+        "numeric__terrainHandM": 1,
+        "numeric__geologyLineamentDensityKmPerKm2": -1,
+        "numeric__geologyLineamentIntersectionDensity": -1,
+        "numeric__terrainTwi": -1,
+    },
+}
+
+
 @dataclass(frozen=True)
 class CandidateSpec:
     name: str
@@ -49,10 +92,11 @@ def build_preprocessor() -> ColumnTransformer:
         ("imputer", SimpleImputer(strategy="most_frequent", missing_values=None)),
         ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
     ])
-    return ColumnTransformer([
+    transformer = ColumnTransformer([
         ("numeric", numeric, NUMERIC_FEATURES),
         ("categorical", categorical, CATEGORICAL_FEATURES),
     ], remainder="drop", sparse_threshold=0.0)
+    return transformer.set_output(transform="pandas")
 
 
 def _trees(profile: str) -> int:
@@ -91,6 +135,16 @@ def candidate_specs(task: str, seed: int = 42, profile: str = "standard") -> lis
                 ),
             ),
             CandidateSpec(
+                "hist_gradient_boosting",
+                "sklearn.ensemble.HistGradientBoostingClassifier",
+                True,
+                lambda: HistGradientBoostingClassifier(
+                    max_iter=min(n_estimators, 150),
+                    monotonic_cst=PHYSICAL_MONOTONE_CONSTRAINTS["success"],
+                    random_state=seed,
+                ),
+            ),
+            CandidateSpec(
                 "xgboost",
                 "xgboost.XGBClassifier",
                 XGBClassifier is not None,
@@ -102,6 +156,7 @@ def candidate_specs(task: str, seed: int = 42, profile: str = "standard") -> lis
                     colsample_bytree=0.9,
                     reg_lambda=1.0,
                     eval_metric="logloss",
+                    monotone_constraints=PHYSICAL_MONOTONE_CONSTRAINTS["success"],
                     random_state=seed,
                     n_jobs=-1,
                 )) if XGBClassifier is not None else None,
@@ -143,6 +198,16 @@ def candidate_specs(task: str, seed: int = 42, profile: str = "standard") -> lis
                 ),
             ),
             CandidateSpec(
+                "hist_gradient_boosting",
+                "sklearn.ensemble.HistGradientBoostingRegressor",
+                True,
+                lambda: HistGradientBoostingRegressor(
+                    max_iter=min(n_estimators, 150),
+                    monotonic_cst=PHYSICAL_MONOTONE_CONSTRAINTS.get(task, {}),
+                    random_state=seed,
+                ),
+            ),
+            CandidateSpec(
                 "xgboost",
                 "xgboost.XGBRegressor",
                 XGBRegressor is not None,
@@ -155,6 +220,7 @@ def candidate_specs(task: str, seed: int = 42, profile: str = "standard") -> lis
                     reg_lambda=1.0,
                     objective="reg:squarederror",
                     eval_metric="rmse",
+                    monotone_constraints=PHYSICAL_MONOTONE_CONSTRAINTS.get(task, {}),
                     random_state=seed,
                     n_jobs=-1,
                 )) if XGBRegressor is not None else None,
