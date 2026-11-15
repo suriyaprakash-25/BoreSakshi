@@ -31,6 +31,8 @@ export const signupSchema = z
     phone,
     password,
     confirmPassword: z.string().max(128).optional(),
+    consentAccepted: z.literal(true, { error: "Accept the terms and privacy notice to create an account" }),
+    consentVersion: z.string().trim().min(1).max(40),
   })
   .strict()
   .refine((d) => d.confirmPassword == null || d.password === d.confirmPassword, {
@@ -73,6 +75,23 @@ export const geologicalLayerSchema = z.object({
   notes: z.string().trim().max(240).optional().default(""),
 });
 
+export const WATER_STRIKE_LIMIT = 12;
+export const DRILLING_STOP_REASONS = ["water_found", "budget", "rock_too_hard", "equipment", "gave_up_no_water", "other"];
+export const YIELD_METHODS = ["timed_container", "flow_meter", "airlift_estimate", "visual_estimate", "not_measured"];
+export const SITE_CHOICE_METHODS = ["diviner", "geophysical_survey", "near_working_well", "farmer_choice", "boresakshi", "other"];
+
+const waterStrikeSchema = z.object({
+  depthFt: z.number().positive().max(5000),
+  flowLpm: z.number().min(0).max(100000).nullable().optional(),
+}).strict();
+
+export const borewellFollowUpSchema = z.object({
+  observedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "observedOn must be YYYY-MM-DD"),
+  stillYielding: z.boolean({ error: "stillYielding (true/false) is required" }),
+  yieldLpm: z.number().min(0).max(100000).nullable().optional(),
+  note: z.string().trim().max(300).optional(),
+}).strict();
+
 export const borewellSchema = z.object({
   lat,
   lng,
@@ -88,7 +107,21 @@ export const borewellSchema = z.object({
   success: z.boolean({ error: "success (true/false) is required" }),
   evidenceTokens: z.array(z.string().min(20).max(4096)).min(1, "At least one evidence photo is required").max(10),
   language: z.string().max(10).optional(),
+  predictionId: z.string().trim().min(1).max(32).optional(),
+  waterStrikes: z.array(waterStrikeSchema).max(WATER_STRIKE_LIMIT).optional(),
+  stopReason: z.enum(DRILLING_STOP_REASONS).optional(),
+  yieldMethod: z.enum(YIELD_METHODS).optional(),
+  siteChosenBy: z.enum(SITE_CHOICE_METHODS).optional(),
+  depthToHardRockFt: z.number().min(0).max(5000).nullable().optional(),
 }).superRefine((data, ctx) => {
+  for (const [index, strike] of (data.waterStrikes || []).entries()) {
+    if (strike.depthFt > data.depthFt) {
+      ctx.addIssue({ code: "custom", path: ["waterStrikes", index, "depthFt"], message: "A water strike cannot be below total depth" });
+    }
+  }
+  if (data.depthToHardRockFt != null && data.depthToHardRockFt > data.depthFt) {
+    ctx.addIssue({ code: "custom", path: ["depthToHardRockFt"], message: "Depth to hard rock cannot exceed total depth" });
+  }
   const drillingMs = Date.parse(`${data.drillingDate}T00:00:00.000Z`);
   const normalizedDate = Number.isFinite(drillingMs) ? new Date(drillingMs).toISOString().slice(0, 10) : null;
   if (!Number.isFinite(drillingMs) || normalizedDate !== data.drillingDate) {

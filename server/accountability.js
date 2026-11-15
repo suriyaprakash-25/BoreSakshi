@@ -23,7 +23,7 @@ function rangeSummary(range) {
 function regionKeyFrom(record) {
   const district = String(record?.district || "").trim();
   const taluk = String(record?.taluk || "").trim();
-  const village = String(record?.village || record?.placeName || "").trim();
+  const village = String(record?.village || "").trim();
   if (district && taluk) return `${district} / ${taluk}`;
   if (district) return district;
   if (village) return village;
@@ -271,13 +271,15 @@ export function summarizeAccountabilityLedger(predictions) {
     ...prediction,
     accountability: normalizePredictionAccountability(prediction),
   }));
-  const overall = summaryCore(normalized);
+  // Headline figures describe the trained model only. Old fallback records stay
+  // visible in the per-source breakdown but must never move the public accuracy.
+  const overall = summaryCore(normalized.filter((prediction) => prediction.accountability.predictionSource === "ml"));
   return {
     schemaVersion: ACCOUNTABILITY_SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
-    totalPredictions: normalized.length,
-    pending: normalized.filter((prediction) => prediction.accountability.status !== "SCORED_VERIFIED").length,
     ...overall,
+    totalPredictions: overall.predictions,
+    pending: overall.predictions - overall.scored,
     byModelVersion: groupPerformance(normalized, (prediction) => prediction.accountability.modelIdentity),
     byRegion: groupPerformance(normalized.filter((prediction) => prediction.accountability.actual), (prediction) => prediction.accountability.actual?.regionKey || "unknown"),
     bySource: groupPerformance(normalized, (prediction) => prediction.accountability.predictionSource || prediction.predictionSource || "unknown"),
@@ -287,7 +289,8 @@ export function summarizeAccountabilityLedger(predictions) {
       calibration: `${CALIBRATION_BIN_COUNT}-bin expected calibration error over currently verified scored outcomes`,
       depthError: "predicted water-strike interval midpoint minus verified actual water-strike depth; dry holes excluded",
       yieldError: "predicted yield interval midpoint minus verified measured yield",
-      regionalGrouping: "district/taluk when available, then village/place, otherwise coarse 0.1-degree grid",
+      matching: "each verified well scores one prediction: the one linked by code, otherwise the nearest within 250 m issued in the year before drilling",
+      regionalGrouping: "district/taluk when available, then village, otherwise coarse 0.1-degree grid",
       modelGrouping: "ML modelVersion values remain distinct; heuristic_fallback is never blended into an ML model version",
     },
   };
@@ -298,8 +301,8 @@ export function safeLedgerEntry(prediction) {
   return {
     predictionId: prediction.id,
     location: {
-      lat: finite(prediction.lat) ? round(prediction.lat, 3) : null,
-      lng: finite(prediction.lng) ? round(prediction.lng, 3) : null,
+      lat: finite(prediction.lat) ? round(prediction.lat, 2) : null,
+      lng: finite(prediction.lng) ? round(prediction.lng, 2) : null,
       region: accountability.actual?.regionKey || null,
     },
     predictionDate: accountability.predictionDate || prediction.createdAt || null,

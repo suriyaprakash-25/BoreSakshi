@@ -7,12 +7,17 @@ import { useAuth } from "../auth.jsx";
 import { signin, signup } from "../api.js";
 import { validateAuthForm } from "../authValidation.js";
 import { roleHome } from "../authState.js";
+import { useI18n } from "../i18n.jsx";
+import { CONSENT_VERSION } from "../strings.js";
+import LegalFooter from "../components/LegalFooter.jsx";
 
 export default function AuthScreen({ mode }) {
   const isSignup = mode === "signup";
   const navigate = useNavigate();
   const location = useLocation();
   const { signIn } = useAuth();
+  const { t } = useI18n();
+  const [consent, setConsent] = useState(false);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -30,11 +35,12 @@ export default function AuthScreen({ mode }) {
     setError("");
     const validationError = validateAuthForm({ mode, name, phone, password, confirmPassword });
     if (validationError) return setError(validationError);
+    if (isSignup && !consent) return setError(t("form.consentRequired"));
 
     setBusy(true);
     try {
       const data = isSignup
-        ? await signup({ name, phone, password, confirmPassword })
+        ? await signup({ name, phone, password, confirmPassword, consentAccepted: true, consentVersion: CONSENT_VERSION })
         : await signin({ phone, password });
       signIn(data); // AuthContext persists only the safe operator profile.
       const home = roleHome(data.operator);
@@ -91,57 +97,74 @@ export default function AuthScreen({ mode }) {
           <div className="auth-mark">
             <img src="/logo.png" alt="BoreSakshi Logo" style={{ width: "100%", height: "100%", objectFit: "contain", transform: "scale(1.8)" }} />
           </div>
-          <h1 className="auth-title">{isSignup ? "Create operator account" : "Operator sign in"}</h1>
+          <h1 className="auth-title">{t(isSignup ? "signup.title" : "signin.title")}</h1>
           <p className="auth-sub">
-            {isSignup
-              ? "Create a protected operator account. An administrator must verify the account before field evidence can be submitted."
-              : "Sign in to log completed borewells and access your job tools."}
+            {t(isSignup ? "signup.sub" : "signin.sub")}
           </p>
 
           <form onSubmit={handleSubmit} className="auth-form">
             {isSignup && (
               <label className="auth-field">
-                <span className="auth-label"><HardHat size={15} strokeWidth={2.2} /> Name / rig</span>
+                <span className="auth-label"><HardHat size={15} strokeWidth={2.2} /> {t("form.name")}</span>
                 <input className="op-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Murugan Borewells" autoComplete="name" />
               </label>
             )}
 
             <label className="auth-field">
-              <span className="auth-label"><Phone size={15} strokeWidth={2.2} /> Phone</span>
+              <span className="auth-label"><Phone size={15} strokeWidth={2.2} /> {t("form.phone")}</span>
               <input className="op-input" type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="e.g. 98765 43210" autoComplete="tel" />
             </label>
 
             <label className="auth-field">
-              <span className="auth-label"><Lock size={15} strokeWidth={2.2} /> Password</span>
-              <input className="op-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isSignup ? "Min 10 chars, A-Z, 0-9, symbol" : "Your password"} autoComplete={isSignup ? "new-password" : "current-password"} />
+              <span className="auth-label"><Lock size={15} strokeWidth={2.2} /> {t("form.password")}</span>
+              <input className="op-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t(isSignup ? "form.passwordHint" : "form.yourPassword")} autoComplete={isSignup ? "new-password" : "current-password"} />
             </label>
 
             {isSignup && (
               <label className="auth-field">
-                <span className="auth-label"><Lock size={15} strokeWidth={2.2} /> Confirm password</span>
-                <input className="op-input" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter your password" autoComplete="new-password" />
+                <span className="auth-label"><Lock size={15} strokeWidth={2.2} /> {t("form.confirm")}</span>
+                <input className="op-input" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder={t("form.reenter")} autoComplete="new-password" />
+              </label>
+            )}
+
+            {isSignup && (
+              <label className="auth-consent">
+                <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+                <span><ConsentText /></span>
               </label>
             )}
 
             {error && <div className="op-error">{error}</div>}
 
             <button className="btn btn-primary btn-block" disabled={busy}>
-              {busy ? "Please wait…" : <>{isSignup ? "Create account" : "Sign in"} <ArrowRight size={18} strokeWidth={2.2} /></>}
+              {busy ? t("form.wait") : <>{t(isSignup ? "form.create" : "auth.signIn")} <ArrowRight size={18} strokeWidth={2.2} /></>}
             </button>
           </form>
 
           <div className="auth-switch">
             {isSignup ? (
-              <>Already registered? <Link to="/signin" state={location.state}>Sign in</Link></>
+              <>{t("form.haveAccount")} <Link to="/signin" state={location.state}>{t("auth.signIn")}</Link></>
             ) : (
-              <>New operator? <Link to="/signup" state={location.state}>Create an account</Link></>
+              <>{t("form.newOperator")} <Link to="/signup" state={location.state}>{t("form.createLink")}</Link></>
             )}
           </div>
-          {!isSignup && <div className="auth-switch"><Link to="/reset-password">Forgot password? Use your recovery code</Link></div>}
+          {!isSignup && <div className="auth-switch"><Link to="/reset-password">{t("form.forgot")}</Link></div>}
         </div>
 
-        <p className="auth-foot">Just checking a location? The <Link to="/">farmer map</Link> is open — no account needed.</p>
+        <p className="auth-foot">{t("form.farmerNote")} <Link to="/map">{t("form.farmerMap")}</Link></p>
+        <LegalFooter />
       </div>
     </div>
+  );
+}
+
+function ConsentText() {
+  const { t } = useI18n();
+  const marker = "\u0000";
+  const parts = t("form.consent", { terms: marker, privacy: marker }).split(marker);
+  return (
+    <>
+      {parts[0]}<Link to="/terms">{t("footer.terms")}</Link>{parts[1]}<Link to="/privacy">{t("footer.privacy")}</Link>{parts[2]}
+    </>
   );
 }

@@ -9,7 +9,7 @@ import { useOperatorData } from "../operatorData.jsx";
 import { successRate, filterLogs, trustedOutcomeLogs } from "../metrics.js";
 
 export default function History() {
-  const { logs, loading, requestReview } = useOperatorData();
+  const { logs, loading, requestReview, addFollowUp } = useOperatorData();
   const [query, setQuery] = useState("");
   const [outcome, setOutcome] = useState("all");
 
@@ -50,7 +50,7 @@ export default function History() {
           </div>
         ) : (
           <ul className="hist-list">
-            {shown.map((log) => <LogItem key={log.id} log={log} operatorActions={{ requestReview }} />)}
+            {shown.map((log) => <LogItem key={log.id} log={log} operatorActions={{ requestReview, addFollowUp }} />)}
           </ul>
         )}
       </div>

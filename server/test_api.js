@@ -86,7 +86,7 @@ async function main() {
     const res = await fetchAPI("/auth/signup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Test Operator", phone: testPhone, password: testPassword, confirmPassword: testPassword })
+      body: JSON.stringify({ name: "Test Operator", phone: testPhone, password: testPassword, confirmPassword: testPassword, consentAccepted: true, consentVersion: "api-test" })
     });
     // Accept 201 or 409 (if running multiple times)
     assert(res.status === 201 || res.status === 409, `Expected 201 or 409, got ${res.status}`);

@@ -1,0 +1,10 @@
+rasterio>=1.4,<2
+pyproj>=3.7,<4
+lightgbm>=4.5,<5
+scipy>=1.14,<2
+geopandas>=1.0,<2
+pyogrio>=0.10,<1
+mapbox-vector-tile>=2,<3
+requests>=2.31,<3
+planetary-computer>=1.0,<2
+pystac-client>=0.8,<1

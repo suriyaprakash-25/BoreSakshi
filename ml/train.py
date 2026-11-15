@@ -14,7 +14,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", default="artifacts", help="Directory for generated model artifacts")
     parser.add_argument("--run-id", default="", help="Stable run ID; default derives from dataset hash")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--min-rows", type=int, default=30)
+    parser.add_argument("--min-rows", type=int, default=300)
     parser.add_argument("--profile", choices=["standard", "test"], default="standard")
     parser.add_argument("--algorithms", default="", help="Comma-separated candidate names; empty trains all available candidates")
     return parser.parse_args()

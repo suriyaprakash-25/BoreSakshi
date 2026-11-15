@@ -1,22 +1,25 @@
-// LandingScreen.jsx — marketing entry (/welcome). Explains the product in three
+// LandingScreen.jsx — marketing entry (/). Explains the product in three
 // sections (problem → solution → accountability ledger) with two clear CTAs:
 // farmers go straight to the open map; operators go to sign up / sign in.
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Droplets, MapPin, HardHat, ArrowRight, TrendingDown, Coins,
-  Satellite, Database, Cpu, Scale, ShieldCheck, CheckCircle2,
+  Search, Database, Scale, ShieldCheck, CheckCircle2,
 } from "lucide-react";
 import AppHeader from "../components/AppHeader.jsx";
 import { getLedger } from "../api.js";
+import { useI18n } from "../i18n.jsx";
+import LegalFooter from "../components/LegalFooter.jsx";
 
 export default function LandingScreen() {
+  const { t } = useI18n();
   const [ledger, setLedger] = useState(null);
   useEffect(() => { getLedger().then(setLedger).catch(() => { }); }, []);
 
   return (
     <div className="lp">
-      <AppHeader subtitle="Know before you drill" />
+      <AppHeader subtitle={t("brand.tagline")} />
 
       <main className="lp-main op-anim">
         {/* hero */}
@@ -24,13 +27,13 @@ export default function LandingScreen() {
           <div className="lp-hero-text">
             <div className="lp-cta">
               <Link to="/map" className="btn btn-primary btn-lg">
-                <MapPin size={19} strokeWidth={2.2} /> Check a location
+                <MapPin size={19} strokeWidth={2.2} /> {t("land.ctaCheck")}
               </Link>
               <Link to="/signin" className="btn btn-ghost btn-lg">
-                <HardHat size={19} strokeWidth={2.2} /> I'm a rig operator
+                <HardHat size={19} strokeWidth={2.2} /> {t("land.ctaOperator")}
               </Link>
             </div>
-            <p className="lp-cta-note">Checking a location is free and needs no account.</p>
+            <p className="lp-cta-note">{t("land.note")}</p>
           </div>
           <div className="lp-hero-visual">
             <div className="lp-orb lp-orb-1"></div>
@@ -41,71 +44,55 @@ export default function LandingScreen() {
         {/* 1) the problem */}
         <section className="lp-section">
           <div className="lp-section-head">
-            <span className="lp-kicker lp-kicker-warn">The problem</span>
-            <h2>Every dry borehole costs a family a fortune</h2>
+            <span className="lp-kicker lp-kicker-warn">{t("land.problemKicker")}</span>
+            <h2>{t("land.problemTitle")}</h2>
           </div>
           <div className="lp-bento">
-            <Feature icon={TrendingDown} tone="warn" isLarge
-              title="Drilled on guesswork"
-              body="Water diviners and unverifiable survey firms decide where to drill. Nobody is held to account when the hole comes up dry." />
-            <Feature icon={Coins} tone="warn"
-              title="₹1.5–4 lakh per failure"
-              body="A failed borewell is money a rural household often borrowed — gone in a day, with nothing to show for it." />
-            <Feature icon={Database} tone="warn"
-              title="The outcome vanishes"
-              body="Depth, strata, yield, success or failure — the one dataset that could make prediction reliable is never recorded." />
+            <Feature icon={TrendingDown} tone="warn" isLarge title={t("land.p1Title")} body={t("land.p1Body")} />
+            <Feature icon={Coins} tone="warn" title={t("land.p2Title")} body={t("land.p2Body")} />
+            <Feature icon={Database} tone="warn" title={t("land.p3Title")} body={t("land.p3Body")} />
           </div>
         </section>
 
         {/* 2) the solution */}
         <section className="lp-section">
           <div className="lp-section-head">
-            <span className="lp-kicker">The solution</span>
-            <h2>A verified-outcome network, feeding an AI engine</h2>
+            <span className="lp-kicker">{t("land.solutionKicker")}</span>
+            <h2>{t("land.solutionTitle")}</h2>
           </div>
           <div className="lp-bento">
-            <Feature icon={Cpu} isLarge
-              title="A prediction for any point"
-              body="Drop a pin and get success probability, a depth band, expected yield and a confidence level — a ₹500 check, not a ₹3 lakh gamble." />
-            <Feature icon={HardHat}
-              title="Operators log real jobs"
-              body="Rig operators record each completed borewell in seconds — voice or tap — in exchange for free job reports and business tools." />
-            <Feature icon={Satellite}
-              title="Fused with earth data"
-              body="Those verified logs combine with satellite, geology and rainfall signals — real ground truth, not just a static regional map." />
+            <Feature icon={Search} isLarge title={t("land.s1Title")} body={t("land.s1Body")} />
+            <Feature icon={HardHat} title={t("land.s2Title")} body={t("land.s2Body")} />
+            <Feature icon={ShieldCheck} title={t("land.s3Title")} body={t("land.s3Body")} />
           </div>
         </section>
 
         {/* 3) the accountability ledger */}
         <section className="lp-section">
           <div className="lp-section-head">
-            <span className="lp-kicker lp-kicker-mint">Why trust us</span>
-            <h2>The accountability ledger</h2>
+            <span className="lp-kicker lp-kicker-mint">{t("land.trustKicker")}</span>
+            <h2>{t("land.trustTitle")}</h2>
           </div>
           <div className="lp-ledger">
             <div className="lp-ledger-copy">
-              <p>
-                Other tools predict and move on. <strong>We score every prediction
-                  against what was actually drilled</strong> — and publish the running
-                accuracy for anyone to inspect. Hits and misses, no cherry-picking.
-              </p>
+              <p>{t("land.trustIntro")}</p>
               <ul className="lp-checks">
-                <li><CheckCircle2 size={17} strokeWidth={2.2} /> Predicted vs. actual, matched within 5&nbsp;km</li>
-                <li><CheckCircle2 size={17} strokeWidth={2.2} /> Updated live as operators log outcomes</li>
-                <li><ShieldCheck size={17} strokeWidth={2.2} /> Public record — accountability, not marketing</li>
+                <li><CheckCircle2 size={17} strokeWidth={2.2} /> {t("land.check1")}</li>
+                <li><CheckCircle2 size={17} strokeWidth={2.2} /> {t("land.check2")}</li>
+                <li><ShieldCheck size={17} strokeWidth={2.2} /> {t("land.check3")}</li>
               </ul>
               <Link to="/ledger" className="btn btn-ghost">
-                <Scale size={17} strokeWidth={2.2} /> See the live ledger <ArrowRight size={16} strokeWidth={2.2} />
+                <Scale size={17} strokeWidth={2.2} /> {t("land.ledgerLink")} <ArrowRight size={16} strokeWidth={2.2} />
               </Link>
             </div>
-            <Link to="/ledger" className="lp-ledger-stat" aria-label="See the live accountability ledger">
+            <Link to="/ledger" className="lp-ledger-stat" aria-label={t("land.ledgerLink")}>
               <div className="lp-stat-icon"><Scale size={22} strokeWidth={2} /></div>
               <div className="lp-stat-num">
                 {ledger?.accuracyPct != null ? `${ledger.accuracyPct}%` : "—"}
               </div>
-              <div className="lp-stat-label">live prediction accuracy</div>
+              <div className="lp-stat-label">{t("land.statLabel")}</div>
               <div className="lp-stat-sub">
-                {ledger?.scored ? `across ${ledger.scored} scored prediction${ledger.scored === 1 ? "" : "s"}` : "verified against real drills"}
+                {ledger?.scored ? t("land.statSub", { count: ledger.scored }) : t("land.statEmpty")}
               </div>
             </Link>
           </div>
@@ -113,19 +100,20 @@ export default function LandingScreen() {
 
         {/* closing CTA */}
         <section className="lp-final">
-          <h2>Two ways in</h2>
+          <h2>{t("land.finalTitle")}</h2>
           <div className="lp-cta">
             <Link to="/map" className="btn btn-primary btn-lg">
-              <MapPin size={19} strokeWidth={2.2} /> Check a location
+              <MapPin size={19} strokeWidth={2.2} /> {t("land.ctaCheck")}
             </Link>
             <Link to="/signup" className="btn btn-ghost btn-lg">
-              <HardHat size={19} strokeWidth={2.2} /> Register as an operator
+              <HardHat size={19} strokeWidth={2.2} /> {t("land.ctaRegister")}
             </Link>
           </div>
         </section>
 
         <footer className="lp-footer">
-          BoreSakshi · a verified-outcome groundwater network · MSME Idea Hackathon 6.0
+          BoreSakshi · MSME Idea Hackathon 6.0
+          <LegalFooter />
         </footer>
       </main>
     </div>

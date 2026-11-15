@@ -13,8 +13,20 @@ const client = new MongoClient(URI, { serverSelectionTimeoutMS: 5000 });
 let borewells, predictions, operators, assignments;
 let ingestionBatches, stagedBorewells, ingestionAudit, datasetAssets;
 
-// call once at server startup
-export async function connectDB() {
+let connecting = null;
+
+// Safe to call on every request: it connects once and retries after a failure.
+export function connectDB() {
+  if (!connecting) {
+    connecting = openDatabase().catch((error) => {
+      connecting = null;
+      throw error;
+    });
+  }
+  return connecting;
+}
+
+async function openDatabase() {
   await client.connect();
   const database = client.db(DB_NAME);
   borewells = database.collection("borewells");
@@ -33,6 +45,9 @@ export async function connectDB() {
   await borewells.createIndex({ ingestionFingerprint: 1 }, { sparse: true });
   await borewells.createIndex({ drilledDate: 1 }, { sparse: true });
   await predictions.createIndex({ id: 1 }, { unique: true });
+  await predictions.createIndex({ location: "2dsphere" }, { name: "pilot_prediction_location" });
+  await predictions.createIndex({ dedupeKey: 1 }, { name: "pilot_prediction_dedupe", unique: true, sparse: true });
+  await predictions.createIndex({ "actual.borewellId": 1 }, { name: "pilot_prediction_outcome", sparse: true });
   await operators.createIndex({ id: 1 }, { unique: true });
   await operators.createIndex({ phone: 1 }, { unique: true }); // one account per phone
   await assignments.createIndex({ id: 1 }, { unique: true });
@@ -78,7 +93,27 @@ export const db = {
     return record;
   },
   async getBorewells() {
-    return borewells.find({}, NO_MONGO_ID).limit(5000).toArray();
+    return borewells.find({}, NO_MONGO_ID).sort({ createdAt: -1 }).limit(5000).toArray();
+  },
+  async getBorewellsNear({ lat, lng, radiusKm }) {
+    return borewells.find({
+      location: {
+        $nearSphere: {
+          $geometry: { type: "Point", coordinates: [lng, lat] },
+          $maxDistance: radiusKm * 1000,
+        },
+      },
+    }, NO_MONGO_ID).limit(500).toArray();
+  },
+  async getBorewell(id) {
+    return borewells.findOne({ id }, NO_MONGO_ID);
+  },
+  async addBorewellFollowUp(id, followUp) {
+    return borewells.findOneAndUpdate(
+      { id },
+      { $push: { followUps: followUp } },
+      { returnDocument: "after", projection: { _id: 0 } }
+    );
   },
   // admin: every log, newest first (flag/verify fields included)
   async getAllBorewells() {
@@ -98,12 +133,50 @@ export const db = {
   },
 
   // --- predictions we issued (for the accountability ledger) ---
+  // Idempotent per dedupeKey, so repeat taps on one spot share one ledger record.
+  // Returns the stored record, which may be the earlier one.
   async addPrediction(record) {
-    await predictions.insertOne({ ...record });
-    return record;
+    if (!record.dedupeKey) {
+      await predictions.insertOne({ ...record });
+      return record;
+    }
+    return predictions.findOneAndUpdate(
+      { dedupeKey: record.dedupeKey },
+      { $setOnInsert: record },
+      { upsert: true, returnDocument: "after", projection: { _id: 0 } }
+    );
   },
+  // Every prediction, without the bulky fields the ledger never reads.
   async getPredictions() {
-    return predictions.find({}, NO_MONGO_ID).limit(5000).toArray();
+    return predictions
+      .find({}, { projection: { _id: 0, featureSnapshot: 0, explanations: 0, factors: 0, uncertainty: 0 } })
+      .sort({ createdAt: 1 })
+      .toArray();
+  },
+  async getPrediction(id) {
+    return predictions.findOne({ id }, NO_MONGO_ID);
+  },
+  async findOpenPredictionsNear({ lat, lng, radiusKm }) {
+    return predictions.find({
+      actual: null,
+      location: {
+        $nearSphere: {
+          $geometry: { type: "Point", coordinates: [lng, lat] },
+          $maxDistance: radiusKm * 1000,
+        },
+      },
+    }, NO_MONGO_ID).limit(200).toArray();
+  },
+  async getPredictionsByOutcome(borewellId) {
+    return predictions.find({ "actual.borewellId": borewellId }, NO_MONGO_ID).toArray();
+  },
+  // Only an open prediction can be closed; null means another review got there first.
+  async claimPredictionOutcome(id, patch) {
+    return predictions.findOneAndUpdate(
+      { id, actual: null },
+      { $set: patch },
+      { returnDocument: "after", projection: { _id: 0 } }
+    );
   },
   async updatePrediction(id, patch) {
     const result = await predictions.findOneAndUpdate(
@@ -126,16 +199,16 @@ export const db = {
   async getOperatorById(id) {
     return operators.findOne({ id }, NO_MONGO_ID);
   },
-  // admin: all accounts, without the password hash
+  // admin: all accounts, without credential hashes
   async getOperators() {
-    return operators.find({}, { projection: { _id: 0, passwordHash: 0 } }).sort({ createdAt: -1 }).limit(5000).toArray();
+    return operators.find({}, { projection: { _id: 0, passwordHash: 0, recoveryCodeHash: 0 } }).sort({ createdAt: -1 }).limit(5000).toArray();
   },
   // admin can change status/verified only (never role — no in-app role management)
   async updateOperator(id, patch) {
     const result = await operators.findOneAndUpdate(
       { id },
       { $set: patch },
-      { returnDocument: "after", projection: { _id: 0, passwordHash: 0 } }
+      { returnDocument: "after", projection: { _id: 0, passwordHash: 0, recoveryCodeHash: 0 } }
     );
     return result || null;
   },
@@ -157,29 +230,6 @@ export const db = {
     );
     return result || null;
   },
-  // give a new operator a starter work queue so the dashboard has real content.
-  // Sample sites around the Namakkal / Tiruchengode belt (matches the demo map).
-  async seedAssignmentsForOperator(operatorId) {
-    const sites = [
-      { village: "Tiruchengode", lat: 11.383, lng: 77.895, note: "Farmer request · 2 acre plot" },
-      { village: "Pallipalayam", lat: 11.362, lng: 77.805, note: "Panchayat borewell" },
-      { village: "Mallasamudram", lat: 11.512, lng: 78.020, note: "Repeat customer" },
-    ];
-    const now = Date.now();
-    const docs = sites.map((s, i) => ({
-      id: nanoid(10),
-      operatorId,
-      village: s.village,
-      lat: s.lat,
-      lng: s.lng,
-      note: s.note,
-      status: "pending",
-      assignedAt: new Date(now - i * 86400000).toISOString(),
-    }));
-    await assignments.insertMany(docs);
-    return docs;
-  },
-
   // --- Phase 2: real-data ingestion batches ---
   async addIngestionBatch(batch) {
     await ingestionBatches.insertOne({ ...batch });

@@ -3,6 +3,7 @@
 import { MapContainer, TileLayer, CircleMarker, Marker, useMapEvents, Tooltip, useMap } from "react-leaflet";
 import { useEffect } from "react";
 import L from "leaflet";
+import { useI18n } from "../i18n.jsx";
 
 // custom teal "drill here" pin (avoids Leaflet's broken default-icon issue in bundlers)
 const dropPin = L.divIcon({
@@ -32,6 +33,7 @@ function MapUpdater({ center }) {
 }
 
 export default function MapView({ center, selected, onPick, borewells }) {
+  const { t } = useI18n();
   return (
     <MapContainer center={center} zoom={12} className="map" zoomControl={true} scrollWheelZoom={true}>
       <MapUpdater center={center} />
@@ -54,7 +56,7 @@ export default function MapView({ center, selected, onPick, borewells }) {
           }}
         >
           <Tooltip>
-            {b.success ? "Water found" : "Dry hole"} · {b.depthFt ? `${b.depthFt} ft` : "—"}
+            {t(b.success ? "legend.water" : "legend.dry")} · {b.depthFt ? `${b.depthFt} ft` : "—"}
             {b.yieldLpm ? ` · ${b.yieldLpm} LPM` : ""}
           </Tooltip>
         </CircleMarker>

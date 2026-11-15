@@ -1,7 +1,8 @@
 {
   "name": "boresakshi",
   "version": 2,
-  "buildCommand": "cd web && npm install && npm run build",
+  "installCommand": "npm ci --prefix server --omit=dev && npm ci --prefix web",
+  "buildCommand": "npm run build --prefix web",
   "outputDirectory": "web/dist",
   "rewrites": [
     {

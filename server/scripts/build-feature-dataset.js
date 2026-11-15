@@ -55,7 +55,7 @@ const dataset = buildFeatureDataset({
   borewells: targets,
   nearbyRadiusKm: Number(option("nearby-radius-km", manifest.parameters?.nearbyRadiusKm ?? 5)),
   densityRadiusKm: Number(option("density-radius-km", manifest.parameters?.densityRadiusKm ?? 2)),
-  spatialBlockDeg: Number(option("spatial-block-deg", manifest.parameters?.spatialBlockDeg ?? 0.1)),
+  spatialBlockDeg: Number(option("spatial-block-deg", manifest.parameters?.spatialBlockDeg ?? 0.5)),
 });
 const serialized = serializeFeatureDataset(dataset);
 const out = resolve(outputPath);

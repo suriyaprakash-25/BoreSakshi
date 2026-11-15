@@ -65,42 +65,65 @@ test("browser auth state excludes bearer tokens and recovery secrets", () => {
   assert.equal(roleHome({ role: "operator" }), "/dashboard");
 });
 
-test("PredictionPanel renders idle and explicit heuristic-fallback component states", async (t) => {
+test("PredictionPanel shows no invented numbers when there is no estimate, and never mentions localhost", async (t) => {
   const vite = await createViteServer({ root: WEB_ROOT, server: { middlewareMode: true }, appType: "custom", logLevel: "silent" });
   t.after(() => vite.close());
   const { default: PredictionPanel } = await vite.ssrLoadModule("/src/components/PredictionPanel.jsx");
-
-  const idle = renderToStaticMarkup(React.createElement(PredictionPanel, {
-    status: "idle", data: null, coords: { lat: 0, lng: 0 }, onPinCurrentLocation: () => {},
+  const render = (status, data = null) => renderToStaticMarkup(React.createElement(PredictionPanel, {
+    status, data, coords: { lat: 11.383, lng: 77.895 }, onPinCurrentLocation: () => {},
   }));
+
+  const idle = render("idle");
   assert.match(idle, /Know before you drill/);
-  assert.match(idle, /Pin current location/);
+  assert.match(idle, /Use my current location/);
 
-  const fallback = renderToStaticMarkup(React.createElement(PredictionPanel, {
-    status: "result",
-    coords: { lat: 11.383, lng: 77.895 },
-    onPinCurrentLocation: () => {},
-    data: {
-      successProbability: 58,
-      confidence: "Low",
-      depthBandFt: [250, 430],
-      expectedYieldLpm: [10, 35],
-      rockType: "Granite",
-      nearbyVerifiedLogs: 0,
-      basis: "Phase 17 fallback fixture",
-      factors: [],
-      nearby: [],
-      confidenceReason: null,
-      uncertainty: {},
-      predictionSource: "heuristic_fallback",
-      isMock: true,
-      modelVersion: null,
-      featureVersion: null,
-    },
-  }));
-  assert.match(fallback, /explicitly labelled heuristic fallback/);
-  assert.match(fallback, /not an ML prediction/);
-  assert.match(fallback, /Advisory, not a guarantee/);
+  const none = render("result", {
+    estimateAvailable: false,
+    noEstimateReason: "MODEL_UNAVAILABLE",
+    successProbability: null,
+    depthBandFt: null,
+    expectedYieldLpm: null,
+    confidence: null,
+    nearby: [{ id: "w-1", distanceKm: 1.5, depthFt: 240, success: true, strata: "weathered rock" }],
+  });
+  assert.match(none, /No estimate for this spot/);
+  assert.match(none, /rather show nothing than guess/);
+  assert.match(none, /about 1.5 km/);
+  assert.match(none, /not a guarantee/);
+  assert.doesNotMatch(none, /confidence|Expected depth|Expected yield/i);
+
+  assert.doesNotMatch(render("error"), /localhost/);
+  assert.match(render("offline"), /You are offline/);
+
+  const estimate = render("result", {
+    estimateAvailable: true,
+    successProbability: 58,
+    confidence: "Low",
+    depthBandFt: [250, 430],
+    expectedYieldLpm: [10, 35],
+    rockType: "Granite",
+    nearbyVerifiedLogs: 0,
+    basis: "Trained ML estimate",
+    predictionId: "abc123",
+    factors: [],
+    nearby: [],
+    confidenceReason: null,
+    uncertainty: {},
+    predictionSource: "ml",
+    modelVersion: "run-v1",
+  });
+  assert.match(estimate, /Expected depth/);
+  assert.match(estimate, /abc123/);
+  assert.match(estimate, /not a guarantee/);
+});
+
+test("every Tamil and English string exists in both languages with the same placeholders", async () => {
+  const { STRINGS } = await import("../src/strings.js");
+  assert.deepEqual(Object.keys(STRINGS.ta).sort(), Object.keys(STRINGS.en).sort());
+  const placeholders = (text) => (text.match(/\{\w+\}/g) || []).sort();
+  for (const key of Object.keys(STRINGS.en)) {
+    assert.deepEqual(placeholders(STRINGS.ta[key]), placeholders(STRINGS.en[key]), key);
+  }
 });
 
 test("API auth flow uses HttpOnly-cookie credentials while local storage keeps only safe profile", async (t) => {

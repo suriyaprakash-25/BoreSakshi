@@ -1,4 +1,5 @@
 import test from "node:test";
+import { withLedgerDb } from "./support.js";
 import assert from "node:assert/strict";
 import express from "express";
 import { mkdtemp, rm } from "fs/promises";
@@ -110,11 +111,12 @@ test("evidence tokens are operator-bound, checksum verified and consumed when bo
     });
     assert.equal(verifyEvidenceToken(upload.token, { operatorId: "op-1", now: Date.parse("2026-09-15T01:00:00Z") }).kind, "photo");
     assert.throws(() => verifyEvidenceToken(upload.token, { operatorId: "op-2", now: Date.parse("2026-09-15T01:00:00Z") }), /another operator/);
-    const resolved = await resolveEvidenceTokens([upload.token], "op-1");
+    const tokenTime = { now: Date.parse("2026-09-15T01:00:00Z") };
+    const resolved = await resolveEvidenceTokens([upload.token], "op-1", tokenTime);
     const bound = await bindEvidenceToBorewell(resolved, "well-1");
     assert.equal(bound[0].boundBorewellId, "well-1");
     assert.deepEqual(await readStoredEvidence(bound[0]), bytes);
-    await assert.rejects(() => resolveEvidenceTokens([upload.token], "op-1"));
+    await assert.rejects(() => resolveEvidenceTokens([upload.token], "op-1", tokenTime));
   } finally {
     if (oldDir == null) delete process.env.RIG_MEDIA_DIR; else process.env.RIG_MEDIA_DIR = oldDir;
     if (oldSecret == null) delete process.env.RIG_EVIDENCE_SECRET; else process.env.RIG_EVIDENCE_SECRET = oldSecret;
@@ -155,12 +157,12 @@ function directVerifyStore(id, predictionCreatedAt) {
     actual: null, correct: null, createdAt: predictionCreatedAt,
   };
   return {
-    db: {
+    db: withLedgerDb({
       getAllBorewells: async () => [record],
       updateBorewell: async (_id, patch) => { record = { ...record, ...patch }; return record; },
       getPredictions: async () => [prediction],
       updatePrediction: async (_id, patch) => { prediction = { ...prediction, ...patch }; return prediction; },
-    },
+    }),
     state: () => ({ record, prediction }),
   };
 }

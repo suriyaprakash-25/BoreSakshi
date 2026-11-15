@@ -173,16 +173,20 @@ export function requireMonitoringToken(req, res, next) {
   next();
 }
 
+// About 1.1 km. Exact well positions identify a family's land, so they stay
+// admin/owner only; the public map shows the neighbourhood, not the plot.
+const PUBLIC_COORDINATE_DECIMALS = 2;
+export const blurCoordinate = (value) => Number.isFinite(value) ? Number(value.toFixed(PUBLIC_COORDINATE_DECIMALS)) : null;
+
 export function publicBorewellProjection(record) {
+  const lat = blurCoordinate(record.lat);
+  const lng = blurCoordinate(record.lng);
   return {
     id: record.id,
     schemaVersion: record.schemaVersion || record.rigSubmissionSchemaVersion || null,
-    lat: record.lat,
-    lng: record.lng,
-    location: record.location || (Number.isFinite(record.lng) && Number.isFinite(record.lat)
-      ? { type: "Point", coordinates: [record.lng, record.lat] }
-      : null),
-    placeName: record.placeName || "",
+    lat,
+    lng,
+    location: lat != null && lng != null ? { type: "Point", coordinates: [lng, lat] } : null,
     drilledAt: record.drilledAt || null,
     drilledDate: record.drilledDate || record.drillingDate || null,
     depthFt: record.depthFt ?? null,

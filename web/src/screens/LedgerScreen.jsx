@@ -4,8 +4,11 @@ import { Link } from "react-router-dom";
 import { Scale, Droplet, DropletOff, Check, X, Activity, Gauge, Ruler, Waves } from "lucide-react";
 import AppHeader from "../components/AppHeader.jsx";
 import { getLedger } from "../api.js";
+import { useI18n } from "../i18n.jsx";
+import LegalFooter from "../components/LegalFooter.jsx";
 
-const REFRESH_MS = 10000;
+const REFRESH_MS = 30000;
+const SMALL_SAMPLE = 30;
 
 function accuracyColor(pct) {
   if (pct == null) return "var(--slate)";
@@ -19,6 +22,7 @@ function metric(value, suffix = "") {
 }
 
 export default function LedgerScreen() {
+  const { t } = useI18n();
   const [ledger, setLedger] = useState(null);
   const [error, setError] = useState(false);
 
@@ -37,33 +41,28 @@ export default function LedgerScreen() {
 
   return (
     <div className="op">
-      <AppHeader subtitle="Predicted vs. verified outcomes" />
+      <AppHeader subtitle={t("ledger.subtitle")} />
 
       <div className="ledger-body op-anim">
-        <p className="ledger-lead">
-          BoreSakshi keeps an accountability record for each <strong>persisted prediction</strong>
-          and scores it only when a nearby drilled outcome reaches the verified trust state.
-          This view separates real ML model versions from heuristic fallback predictions.
-        </p>
+        <p className="ledger-lead">{t("ledger.lead")}</p>
 
-        {error && <div className="op-error">Couldn’t reach the BoreSakshi API.</div>}
+        {error && <div className="op-error">{t("ledger.error")}</div>}
 
         <div className="ledger-hero">
           <div className="ledger-acc" style={{ color: accuracyColor(accuracy) }}>
             {accuracy != null ? `${accuracy}%` : "—"}
           </div>
           <div className="ledger-acc-label">
-            {accuracy != null
-              ? `classification accuracy across ${ledger.scored} currently verified scored prediction${ledger.scored === 1 ? "" : "s"}`
-              : "No verified predictions have been scored yet"}
+            {accuracy != null ? t("ledger.heroLabel", { count: ledger.scored }) : t("ledger.heroEmpty")}
           </div>
+          {accuracy != null && ledger.scored < SMALL_SAMPLE && <div className="ledger-acc-label">{t("ledger.small")}</div>}
         </div>
 
         <div className="ledger-stats">
-          <LedgerStat n={ledger?.totalPredictions ?? "—"} label="Persisted predictions" />
-          <LedgerStat n={ledger?.scored ?? "—"} label="Scored (verified)" accent />
-          <LedgerStat n={ledger?.correct ?? "—"} label="Success calls correct" />
-          <LedgerStat n={ledger ? pending : "—"} label="Pending outcome" muted />
+          <LedgerStat n={ledger?.totalPredictions ?? "—"} label={t("ledger.total")} />
+          <LedgerStat n={ledger?.scored ?? "—"} label={t("ledger.scored")} accent />
+          <LedgerStat n={ledger?.correct ?? "—"} label={t("ledger.correct")} />
+          <LedgerStat n={ledger ? pending : "—"} label={t("ledger.pending")} muted />
         </div>
 
         <section className="dash-stats" style={{ marginTop: 16 }}>
@@ -78,27 +77,24 @@ export default function LedgerScreen() {
 
         <div className="ledger-recent">
           <div className="ledger-recent-head">
-            <h3>Recent verified scores</h3>
-            <span className="ledger-live"><i className="ledger-live-dot" /> live</span>
+            <h3>{t("ledger.recent")}</h3>
+            <span className="ledger-live"><i className="ledger-live-dot" /> {t("ledger.live")}</span>
           </div>
 
           {ledger && ledger.recent.length === 0 && (
             <div className="ledger-empty">
               <div className="ledger-empty-badge"><Scale size={26} strokeWidth={2} /></div>
-              <p>
-                Nothing is scored yet. Make a persisted prediction on the <Link to="/map">map</Link>;
-                once a nearby rig outcome is verified, its accountability metrics appear here.
-              </p>
+              <p>{t("ledger.empty")} <Link to="/map">{t("nav.map")}</Link></p>
             </div>
           )}
 
           {ledger && ledger.recent.length > 0 && (
             <div className="ledger-table">
               <div className="ledger-tr ledger-th" style={{ gridTemplateColumns: "1.2fr 1fr 1fr .8fr" }}>
-                <span>Prediction / model</span>
-                <span>Predicted</span>
-                <span>Verified outcome</span>
-                <span className="ledger-c">Errors</span>
+                <span>{t("ledger.colPrediction")}</span>
+                <span>{t("ledger.colPredicted")}</span>
+                <span>{t("ledger.colOutcome")}</span>
+                <span className="ledger-c">{t("ledger.colErrors")}</span>
               </div>
               {ledger.recent.map((row) => {
                 const predictedWater = row.predictedProbabilityPct >= 50;
@@ -106,20 +102,20 @@ export default function LedgerScreen() {
                 return (
                   <div className="ledger-tr" key={row.predictionId} style={{ gridTemplateColumns: "1.2fr 1fr 1fr .8fr" }}>
                     <span className="ledger-loc">
-                      {row.location?.lat?.toFixed?.(3) ?? "—"}, {row.location?.lng?.toFixed?.(3) ?? "—"}
+                      {row.location?.lat?.toFixed?.(2) ?? "—"}, {row.location?.lng?.toFixed?.(2) ?? "—"}
                       <small style={{ display: "block", opacity: .72 }}>{row.modelIdentity || "unknown"}</small>
                     </span>
                     <span>
                       <span className="ledger-pct">{row.predictedProbabilityPct}%</span>
                       <span className={`ledger-verdict ${predictedWater ? "water" : "dry"}`}>
-                        {predictedWater ? "water likely" : "dry likely"}
+                        {t(predictedWater ? "ledger.waterLikely" : "ledger.dryLikely")}
                       </span>
                       <small style={{ display: "block" }}>
                         strike ≈ {metric(row.predictedDepthFt?.estimate, " ft")} · yield ≈ {metric(row.predictedYieldLpm?.estimate, " LPM")}
                       </small>
                     </span>
                     <span className={`ledger-actual ${actualSuccess ? "ok" : "dry"}`}>
-                      {actualSuccess ? <><Droplet size={15} /> water</> : <><DropletOff size={15} /> dry</>}
+                      {actualSuccess ? <><Droplet size={15} /> {t("ledger.water")}</> : <><DropletOff size={15} /> {t("ledger.dry")}</>}
                       <small style={{ display: "block" }}>
                         strike {metric(row.actualOutcome?.waterStrikeFt, " ft")} · yield {metric(row.actualOutcome?.yieldLpm, " LPM")}
                       </small>
@@ -139,12 +135,8 @@ export default function LedgerScreen() {
           )}
         </div>
 
-        <p className="ledger-foot">
-          Success classification uses the issued ≥50% call. Brier score uses the original issued probability.
-          Water-strike error compares the midpoint of the issued depth interval with verified strike depth and excludes dry holes.
-          Yield error compares the issued interval midpoint with verified measured yield. Regional/model tables include only currently trusted scored outcomes;
-          reopening verification removes the outcome from current metrics while preserving its audit history.
-        </p>
+        <p className="ledger-foot">{t("ledger.foot")}</p>
+        <LegalFooter />
       </div>
     </div>
   );

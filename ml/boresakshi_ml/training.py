@@ -53,7 +53,7 @@ class TrainingConfig:
     output_dir: Path
     run_id: str
     seed: int = 42
-    min_rows: int = 30
+    min_rows: int = 300
     profile: str = "standard"
     algorithms: tuple[str, ...] = ()
 
@@ -192,9 +192,9 @@ def train_model_candidates(dataset: dict[str, Any], config: TrainingConfig) -> d
         "checksumPath": str(checksum_path.relative_to(config.output_dir)).replace("\\", "/"),
         "checksumAlgorithm": "sha256",
     }
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     manifest_sha256 = _sha256_file(manifest_path)
-    checksum_path.write_text(f"{manifest_sha256}  {manifest_path.name}\n", encoding="utf-8")
+    checksum_path.write_text(f"{manifest_sha256}  {manifest_path.name}\n", encoding="utf-8", newline="\n")
     manifest["manifestArtifact"]["sha256"] = manifest_sha256
     manifest["manifestArtifact"]["byteSize"] = manifest_path.stat().st_size
     return manifest

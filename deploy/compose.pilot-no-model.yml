@@ -1,0 +1,9 @@
+# Overlay for a data-collection pilot before a reviewed model exists.
+# The ML service stays off and the API answers "no estimate", so farmers still get
+# verified nearby wells and operators can log outcomes. Requires PILOT_WITHOUT_MODEL=YES
+# and REQUIRE_ML_READY=NO in the server env. Remove it once a model is approved.
+services:
+  ml:
+    profiles: ["ml"]
+  api:
+    depends_on: !reset {}

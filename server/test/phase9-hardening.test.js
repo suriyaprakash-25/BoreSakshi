@@ -1,4 +1,5 @@
 import test from "node:test";
+import { withLedgerDb } from "./support.js";
 import assert from "node:assert/strict";
 import express from "express";
 
@@ -48,7 +49,7 @@ function makeDb() {
   };
   const audits = [];
   return {
-    api: {
+    api: withLedgerDb({
       getAllBorewells: async () => [record],
       getBorewells: async () => [record],
       updateBorewell: async (_id, patch) => { record = { ...record, ...patch }; return record; },
@@ -59,7 +60,7 @@ function makeDb() {
       getOperatorById: async () => ({ id: "op-1", name: "Operator One" }),
       updateOperator: async (_id, patch) => ({ id: "op-1", ...patch }),
       getAssignmentsByOperator: async () => [],
-    },
+    }),
     state: () => ({ record, prediction, audits }),
   };
 }

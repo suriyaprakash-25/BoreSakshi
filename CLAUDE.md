@@ -29,44 +29,33 @@ npm install
 npm run dev         # http://localhost:5173  (build / preview also available)
 ```
 
-There is **no test suite and no linter.** Verify the backend with curl (examples
-in `server/README.md`) against `/api/health`, `/api/predict`, `/api/borewells`,
-`/api/ledger`.
+Tests: `npm run test:all` in `server/` and `npm test` in `web/`. The real-Mongo lifecycle
+test runs with `PHASE17_E2E=YES`. There is no linter.
 
 ## Architecture
 
-**The prediction is a deterministic mock.** `server/predict.js` is the single file
-the real AI model plugs into. `predictBorewell({lat,lng,nearbyLogs})` returns a fixed
-output shape (`successProbability`, `depthBandFt`, `expectedYieldLpm`, `confidence`,
-`rockType`, `basis`, `isMock`, plus explainability: `factors[]` and `confidenceReason`);
-it must keep that shape so nothing downstream changes. Results are seeded from lat/lng so
-the same pin always gives the same answer (demos must be repeatable — never introduce
-randomness here). `NEAR_KM` (5) is exported from here and imported by `index.js` — one
-source of truth for the nearby radius.
+**There is no fallback number.** `server/predict.js` calls the Python ML service. If
+the pin is outside `PILOT_BBOX` (`pilotRegion.js`), the model is unavailable, the model
+refuses for low coverage, or its response breaks the contract, `predictBorewell` returns
+`noEstimate()`: `estimateAvailable: false`, a `noEstimateReason`, null numbers and the
+nearby summary. It is never stored in the ledger. Don't reintroduce a guessed number.
+`NEAR_KM` (5) is the evidence radius for nearby wells only.
 
-**Explainability (all heuristic today, real-model SHAP later — same shape).** `factors`
-is a `{label, impact}[]` decomposition whose impacts are probability POINTS and literally
-sum to `successProbability` before the 8–95 clamp: `50 baseline + geology + nearby
-successes − nearby failures`. Nearby verified logs (real drill outcomes within `NEAR_KM`,
-passed in as `nearbyLogs`) are distance-weighted (linear, 1 at the pin → 0 at the edge);
-with zero neighbours the nearby terms are 0 and the score reduces exactly to the old
-geology-only value, so isolated pins never shift. `confidenceReason` carries the
-nearby count/success/fail split, radius, and freshest nearby log date. `POST /api/predict`
-also returns a trimmed `nearby[]` (nearest 20, with `distanceKm`) as the evidence list —
-no separate endpoint. Frontend surfaces all of this in `PredictionPanel.jsx`: "Why this
-prediction?" (factor bars), "Why this confidence?", a Nearby-wells explorer, and **Ask
-BoreSakshi** — a pure string-templating restatement of the same numbers (NOT an AI/LLM
-call, no network). When the real model lands, emit its feature importances into `factors`
-and none of this UI changes.
+**Explainability.** `factors` comes from the model's explanations. `POST /api/predict`
+also returns `nearby[]` (nearest 20) as the evidence list, with distances in half-km steps
+and no place names, so a chosen pin can't triangulate a well. `PredictionPanel.jsx` shows
+the estimate or the no-estimate state. "Summarise this result" restates the numbers; it
+is not an AI call.
 
-**The accountability loop** lives in `server/index.js` and is the point of the
-project:
-1. `POST /api/predict` computes a prediction and stores it with `actual: null`.
-2. `POST /api/borewells` logs a verified drill outcome, then scans all open
-   predictions (`actual == null`) within `NEAR_KM` (5 km, Haversine via
-   `distanceKm`) and closes each by setting `actual` + `correct`
-   (predicted success = `successProbability >= 50`).
-3. `GET /api/ledger` aggregates closed predictions into a public accuracy figure.
+**The accountability loop** is the point of the project:
+1. `POST /api/predict` (`phase11Routes.js`) stores a model estimate with `actual: null`.
+   `dedupeKey` (cell, model, 30-day period) means repeat taps share one record.
+2. `POST /api/borewells` (`phase8Routes.js`) stores a drill log as `SUBMITTED`. It scores
+   nothing until an admin verifies it through the Phase 9 review.
+3. On verification, `ledgerMatching.js` scores **one** prediction: the one linked by
+   `predictionId`, within 1 km, otherwise the nearest within `MATCH_RADIUS_KM` (250 m).
+   It must predate drilling by at most a year, and `claimPredictionOutcome` is atomic.
+4. `GET /api/ledger` publishes accuracy for the trained model only.
 
 **Roles & admin console.** Accounts carry a `role` ('operator' | 'admin'), `status`
 ('active' | 'deactivated'), and `verified` flag (older docs default via `publicOperator`).
@@ -93,8 +82,8 @@ password, `operators` collection) and a `requireAuth` JWT middleware; `POST
 /api/borewells` is the one protected route and derives `operatorId`/`operatorName`
 from the token (never from client input — don't re-add a free-text operator name).
 JWT secret is `process.env.JWT_SECRET`. On the client, `web/src/auth.jsx`
-restores the safe profile from `GET /api/auth/session`; the HTTP-only cookie is the
-sole session credential and no authentication state is kept in localStorage; `components/RequireOperator.jsx` gates `/log` and redirects to `/signin`
+keeps only a safe profile in localStorage; the HTTP-only cookie is the sole session
+credential; `components/RequireOperator.jsx` gates `/log` and redirects to `/signin`
 remembering `location.state.from`. `AuthScreen.jsx` serves both `/signin` and
 `/signup` via a `mode` prop; `AuthBadge` (in `AppHeader`) shows name+signout or a
 Sign in link. No OTP/email/OAuth — out of scope. `predict.js` and the scoring loop
@@ -125,9 +114,9 @@ API. To move to Atlas, change `MONGODB_URI` only. Env overrides: `MONGODB_URI`,
 
 **Web → backend.** All fetch calls are centralized in `web/src/api.js`, pointing at
 `VITE_API_URL` (default `http://localhost:4000`). `App.jsx` is a `react-router-dom`
-router over screens in `web/src/screens/`: `FarmerScreen.jsx` at `/` (the map — holds
+router over screens in `web/src/screens/`: `FarmerScreen.jsx` at `/map` (the map — holds
 prediction state; `MapView.jsx` emits tap coords via `onPick`), `LedgerScreen.jsx` at
-`/ledger` (public accountability ledger), `LandingScreen.jsx` at `/welcome`, `AuthScreen`
+`/ledger` (public accountability ledger), `LandingScreen.jsx` at `/`, `AuthScreen`
 at `/signin` + `/signup`, and the operator-only (RequireOperator-gated) `Dashboard.jsx`
 at `/dashboard` (default post-login landing), `OperatorLog.jsx` at `/log`, and
 `History.jsx` at `/history`. OpenStreetMap tiles need internet; predictions don't.
@@ -143,8 +132,8 @@ All stat/chart math is pure functions in `web/src/metrics.js` (success rate, avg
 Charts are hand-built (no chart lib): single-hue teal bars + a sequential light→dark
 teal→navy strata ramp (light = shallow/weathered, dark = hard/compact). `trustScore`
 is logging volume+completeness+recency (NOT drilling success — dry holes are good data).
-Assignments are seeded per operator at signup (`db.seedAssignmentsForOperator`) and
-auto-close when a log lands within 2 km; logs carry an optional `placeName`.
+Assignments are not created by the app yet (nothing is seeded at signup) and auto-close
+when a log lands within 2 km; logs carry an optional `placeName`, which is never public.
 
 **Ledger screen (`/ledger`).** The moat made visible — reads `GET /api/ledger` and
 shows headline accuracy, counters (issued / scored / correct / awaiting), and a table
@@ -168,6 +157,30 @@ auto-fills from `navigator.geolocation` but stays hand-editable. On submit it PO
 `/api/borewells` and the confirmation surfaces `scoredPredictions` (how many open
 predictions this real outcome just closed on the ledger) — deliberately making the
 operator's contribution to the accountability loop visible.
+
+**Silent pilot.** `ML_SILENT_PILOT=YES` stores model estimates and scores them on the
+ledger, but `/api/predict` answers `NOT_RELEASED` with no number. Use it for the first
+season of any new model.
+
+**Training data.** `ml/public_data/` builds helper-model data from public wells. That data
+never enters `borewells`, and readings inside the pilot box are excluded by an assertion.
+It also trains the groundwater model (`train_groundwater.py`, `gw_finalize.py`, `gw_map.py`)
+on CGWB water levels. That model predicts shallow water-table depth, not borewell success,
+and the app does not call it. `retrain_with_field_data.py` adds drilling outcomes later.
+See section 9 of `docs/ml-data-and-training-plan.md`.
+Drill logs now store `drillDetails`, `confidenceGrade` and append-only `followUps`.
+
+**Language.** All farmer and operator text lives in `web/src/strings.js` (Tamil and
+English, same keys) and is read with `useI18n()`. Tamil is the default. Admin screens are
+English only.
+
+**Offline drill logging.** `public/sw.js` caches the app shell and never `/api/`.
+`offlineQueue.js` holds the record and its files in IndexedDB when there is no signal,
+and `operatorData.jsx` sends them on sign-in and on the `online` event.
+
+**Privacy.** Public wells and ledger rows round coordinates to 2 decimals (about 1 km)
+and omit `placeName`. Exact data is for the owner and admins only. Signup requires
+`consentAccepted` and stores `consent.version`.
 
 ## Conventions
 

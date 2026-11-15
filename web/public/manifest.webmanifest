@@ -1,0 +1,15 @@
+{
+  "name": "BoreSakshi",
+  "short_name": "BoreSakshi",
+  "description": "Know before you drill",
+  "lang": "ta",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0b3d5c",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

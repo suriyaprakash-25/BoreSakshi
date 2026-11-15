@@ -11,6 +11,8 @@ CURRENT_FILE="$STATE_DIR/current"
 PREVIOUS_FILE="$STATE_DIR/previous"
 DEPLOY_BASE_URL="${DEPLOY_BASE_URL:-}"
 OBSERVABILITY_ENABLED="${OBSERVABILITY_ENABLED:-YES}"
+PILOT_NO_MODEL="${PILOT_NO_MODEL:-NO}"
+PILOT_OVERLAY="$ROOT/deploy/compose.pilot-no-model.yml"
 
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
@@ -24,8 +26,12 @@ require_common() {
   docker compose version >/dev/null
   require_file "$COMPOSE_FILE"
   require_file "$SERVER_ENV_FILE"
-  require_file "$ML_ENV_FILE"
-  : "${MODEL_ARTIFACT_DIR:?MODEL_ARTIFACT_DIR must point to the reviewed mounted Phase 10 artifact tree}"
+  if [[ "$PILOT_NO_MODEL" == "YES" ]]; then
+    MODEL_ARTIFACT_DIR="${MODEL_ARTIFACT_DIR:-/nonexistent}"
+  else
+    require_file "$ML_ENV_FILE"
+    : "${MODEL_ARTIFACT_DIR:?MODEL_ARTIFACT_DIR must point to the reviewed mounted Phase 10 artifact tree}"
+  fi
   : "${DEPLOY_BASE_URL:?DEPLOY_BASE_URL must be the public deployment URL}"
   export SERVER_ENV_FILE ML_ENV_FILE MODEL_ARTIFACT_DIR DEPLOY_BASE_URL
   export RIG_MEDIA_VOLUME="${RIG_MEDIA_VOLUME:-boresakshi_rig_media}"
@@ -34,13 +40,16 @@ require_common() {
   docker volume create "$BACKUP_VOLUME" >/dev/null
 }
 
+compose_files=(-f "$COMPOSE_FILE")
+if [[ "$PILOT_NO_MODEL" == "YES" ]]; then compose_files+=(-f "$PILOT_OVERLAY"); fi
+
 compose() {
-  docker compose -f "$COMPOSE_FILE" "$@"
+  docker compose "${compose_files[@]}" "$@"
 }
 
 compose_with_observability() {
   if [[ "$OBSERVABILITY_ENABLED" == "YES" ]]; then
-    docker compose -f "$COMPOSE_FILE" -f "$OBSERVABILITY_FILE" --profile observability "$@"
+    docker compose "${compose_files[@]}" -f "$OBSERVABILITY_FILE" --profile observability "$@"
   else
     compose "$@"
   fi

@@ -39,12 +39,12 @@ export async function getLedger() {
   return res.json();
 }
 
-export async function signup({ name, phone, password, confirmPassword }) {
+export async function signup({ name, phone, password, confirmPassword, consentAccepted, consentVersion }) {
   const res = await fetch(`${API}/api/auth/signup`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ name, phone, password, confirmPassword }),
+    body: JSON.stringify({ name, phone, password, confirmPassword, consentAccepted, consentVersion }),
   });
   if (!res.ok) throw await readError(res, "Could not create account");
   return res.json();
@@ -145,6 +145,17 @@ export async function logBorewell(payload) {
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw await readError(res, "Could not save the drill log");
+  return res.json();
+}
+
+export async function addBorewellFollowUp(id, payload) {
+  const res = await fetch(`${API}/api/borewells/${encodeURIComponent(id)}/follow-up`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await readError(res, "Could not save the follow-up");
   return res.json();
 }
 

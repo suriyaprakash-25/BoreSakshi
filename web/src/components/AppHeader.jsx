@@ -3,16 +3,18 @@ import { NavLink, Link } from "react-router-dom";
 import { Droplets, LayoutDashboard, MapPin, ClipboardList, Scale, History, Users, Flag, ShieldCheck } from "lucide-react";
 import AuthBadge from "./AuthBadge.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
+import LanguageToggle from "./LanguageToggle.jsx";
 import { useAuth } from "../auth.jsx";
+import { useI18n } from "../i18n.jsx";
 
 const PUBLIC_TABS = [
-  { to: "/map", end: true, label: "Map", icon: MapPin },
-  { to: "/ledger", label: "Ledger", icon: Scale },
+  { to: "/map", end: true, labelKey: "nav.map", icon: MapPin },
+  { to: "/ledger", labelKey: "nav.ledger", icon: Scale },
 ];
 const OPERATOR_TABS = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/log", label: "Log", icon: ClipboardList },
-  { to: "/history", label: "History", icon: History },
+  { to: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { to: "/log", labelKey: "nav.log", icon: ClipboardList },
+  { to: "/history", labelKey: "nav.history", icon: History },
 ];
 const ADMIN_TABS = [
   { to: "/admin", end: true, label: "Overview", icon: LayoutDashboard },
@@ -23,8 +25,9 @@ const ADMIN_TABS = [
   { to: "/admin/map", label: "Wells", icon: MapPin },
 ];
 
-export default function AppHeader({ subtitle = "Know before you drill", children }) {
+export default function AppHeader({ subtitle, children }) {
   const { operator } = useAuth();
+  const { t } = useI18n();
   const tabs = operator?.role === "admin"
     ? ADMIN_TABS
     : operator
@@ -45,12 +48,12 @@ export default function AppHeader({ subtitle = "Know before you drill", children
         </span>
         <span className="brand-text">
           <span className="brand-name">BoreSakshi</span>
-          <span className="brand-tag">{subtitle}</span>
+          <span className="brand-tag">{subtitle ?? t("brand.tagline")}</span>
         </span>
       </Link>
 
       <nav className="nav" aria-label="Primary">
-        {tabs.map(({ to, end, label, icon: Icon }) => (
+        {tabs.map(({ to, end, label, labelKey, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -58,13 +61,14 @@ export default function AppHeader({ subtitle = "Know before you drill", children
             className={({ isActive }) => "nav-tab" + (isActive ? " active" : "")}
           >
             <Icon size={17} strokeWidth={2.2} />
-            <span className="nav-tab-label">{label}</span>
+            <span className="nav-tab-label">{labelKey ? t(labelKey) : label}</span>
           </NavLink>
         ))}
       </nav>
 
       <div className="topbar-slot">
         {children}
+        <LanguageToggle />
         <ThemeToggle />
         <AuthBadge />
       </div>

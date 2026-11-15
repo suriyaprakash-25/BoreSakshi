@@ -40,12 +40,12 @@ def _write_checksummed_json(path: Path, payload: dict[str, Any], *, refuse_overw
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8", newline="\n")
     os.replace(tmp, path)
     checksum = _sha256_file(path)
     sidecar = path.with_suffix(path.suffix + ".sha256")
     sidecar_tmp = sidecar.with_suffix(sidecar.suffix + ".tmp")
-    sidecar_tmp.write_text(f"{checksum}  {path.name}\n", encoding="utf-8")
+    sidecar_tmp.write_text(f"{checksum}  {path.name}\n", encoding="utf-8", newline="\n")
     os.replace(sidecar_tmp, sidecar)
     return path, sidecar
 
@@ -223,7 +223,8 @@ class ContinuousLearningConfig:
     output_dir: Path
     run_id: str
     seed: int = 42
-    min_rows: int = 30
+    min_rows: int = 300
+    min_dry_holes: int = 60
     profile: str = "standard"
     algorithms: tuple[str, ...] = ()
     folds: int = 5
@@ -308,6 +309,7 @@ def stage_continuous_learning_candidate(
         folds=config.folds,
         inner_folds=config.inner_folds,
         interval_coverage=config.interval_coverage,
+        min_dry_holes=config.min_dry_holes,
         min_rows=config.min_rows,
         min_spatial_blocks=config.min_spatial_blocks,
         calibration_bins=config.calibration_bins,

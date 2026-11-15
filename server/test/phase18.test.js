@@ -32,6 +32,12 @@ function validEnv(overrides = {}) {
   };
 }
 
+test("a no-model pilot must be declared explicitly", () => {
+  assert.equal(validateProductionDeploymentEnv(validEnv({ REQUIRE_ML_READY: "NO" })).ok, false);
+  assert.equal(validateProductionDeploymentEnv(validEnv({ REQUIRE_ML_READY: "NO", PILOT_WITHOUT_MODEL: "YES" })).ok, true);
+  assert.equal(validateProductionDeploymentEnv(validEnv({ PILOT_WITHOUT_MODEL: "YES" })).ok, false);
+});
+
 test("production deployment configuration rejects unsafe/local or incomplete production settings", () => {
   const result = validateProductionDeploymentEnv(validEnv({
     MONGODB_URI: "mongodb://127.0.0.1:27017/",

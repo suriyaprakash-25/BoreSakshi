@@ -4,7 +4,8 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 ARG VITE_API_URL=""
-ENV VITE_API_URL=${VITE_API_URL}
+ARG VITE_CONTACT_EMAIL=""
+ENV VITE_API_URL=${VITE_API_URL} VITE_CONTACT_EMAIL=${VITE_CONTACT_EMAIL}
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime

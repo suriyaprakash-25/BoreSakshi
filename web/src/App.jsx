@@ -9,6 +9,8 @@ import LedgerScreen from "./screens/LedgerScreen.jsx";
 import LandingScreen from "./screens/LandingScreen.jsx";
 import AuthScreen from "./screens/AuthScreen.jsx";
 import ResetPasswordScreen from "./screens/ResetPasswordScreen.jsx";
+import LegalScreen from "./screens/LegalScreen.jsx";
+import { LanguageProvider } from "./i18n.jsx";
 import Dashboard from "./screens/Dashboard.jsx";
 import History from "./screens/History.jsx";
 import AdminDashboard from "./screens/admin/AdminDashboard.jsx";
@@ -35,6 +37,7 @@ export default function App() {
           },
         }}
       />
+      <LanguageProvider>
       <AuthProvider>
         <OperatorDataProvider>
           <AdminDataProvider>
@@ -46,6 +49,8 @@ export default function App() {
                 <Route path="/signin" element={<AuthScreen mode="signin" />} />
                 <Route path="/signup" element={<AuthScreen mode="signup" />} />
                 <Route path="/reset-password" element={<ResetPasswordScreen />} />
+                <Route path="/privacy" element={<LegalScreen page="privacy" />} />
+                <Route path="/terms" element={<LegalScreen page="terms" />} />
 
                 <Route path="/dashboard" element={<RequireOperator><Dashboard /></RequireOperator>} />
                 <Route path="/log" element={<RequireOperator><OperatorLog /></RequireOperator>} />
@@ -63,6 +68,7 @@ export default function App() {
           </AdminDataProvider>
         </OperatorDataProvider>
       </AuthProvider>
+      </LanguageProvider>
     </>
   );
 }

@@ -10,7 +10,7 @@ import {
   computeOperatorTrust,
   statusPatch,
 } from "./verification.js";
-import { reopenPredictionAccountability, scorePredictionAgainstOutcome } from "./accountability.js";
+import { reopenPredictionsForRecord, scoreVerifiedOutcome } from "./ledgerMatching.js";
 
 function recordById(records, id) {
   return records.find((record) => record.id === id) || null;
@@ -30,69 +30,6 @@ async function audit(db, { record, action, actor, details = {} }) {
   };
   await db.addIngestionAudit(event);
   return event;
-}
-
-async function predictionAudit(db, { prediction, action, actor, details, now }) {
-  if (typeof db.addIngestionAudit !== "function") return;
-  await db.addIngestionAudit({
-    id: nanoid(14),
-    batchId: null,
-    recordId: null,
-    scopeType: "prediction_accountability",
-    scopeId: prediction.id,
-    action,
-    actor: { id: actor.id, name: actor.name, role: actor.role || "admin" },
-    details,
-    createdAt: now,
-  });
-}
-
-async function closeNearbyPredictions({ db, record, distanceKm, NEAR_KM, now, actor }) {
-  const openPredictions = (await db.getPredictions()).filter((prediction) => prediction.actual == null);
-  const drilledAtMs = Date.parse(record.drilledAt || record.drilledDate || "");
-  let scored = 0;
-  for (const prediction of openPredictions) {
-    const predictionAtMs = Date.parse(prediction.createdAt || prediction.predictionTimestamp || "");
-    if (!Number.isFinite(drilledAtMs) || !Number.isFinite(predictionAtMs) || predictionAtMs > drilledAtMs) continue;
-    const matchDistanceKm = distanceKm({ lat: record.lat, lng: record.lng }, { lat: prediction.lat, lng: prediction.lng });
-    if (matchDistanceKm > NEAR_KM) continue;
-    const patch = scorePredictionAgainstOutcome(prediction, record, { now, matchDistanceKm });
-    await db.updatePrediction(prediction.id, patch);
-    await predictionAudit(db, {
-      prediction,
-      action: "verified_outcome_scored",
-      actor,
-      now,
-      details: {
-        borewellId: record.id,
-        verificationStatus: record.verificationStatus,
-        matchDistanceKm,
-        successCorrect: patch.correct,
-        metrics: patch.accountability.metrics,
-      },
-    });
-    scored += 1;
-  }
-  return scored;
-}
-
-async function reopenPredictionsForRecord(db, borewellId, { actor, reason, now }) {
-  const predictions = await db.getPredictions();
-  let reopened = 0;
-  for (const prediction of predictions) {
-    if (prediction.actual?.borewellId !== borewellId && prediction.accountability?.actual?.borewellId !== borewellId) continue;
-    const patch = reopenPredictionAccountability(prediction, { now, reason });
-    await db.updatePrediction(prediction.id, patch);
-    await predictionAudit(db, {
-      prediction,
-      action: "outcome_reopened",
-      actor,
-      now,
-      details: { borewellId, reason },
-    });
-    reopened += 1;
-  }
-  return reopened;
 }
 
 function analysisFor(record, allRecords) {
@@ -279,7 +216,7 @@ export function createPhase9Router({
 
       let ledger = { scored: 0, reopened: 0 };
       if (verify && isTrustedOutcome(updated) && !existing.ledgerScoredAt) {
-        ledger.scored = await closeNearbyPredictions({ db, record: updated, distanceKm, NEAR_KM, now, actor: req.operator });
+        ledger.scored = await scoreVerifiedOutcome({ db, record: updated, now, actor: req.operator });
         updated = await db.updateBorewell(updated.id, {
           ledgerScoredAt: now,
           ledgerScoredPredictions: ledger.scored,

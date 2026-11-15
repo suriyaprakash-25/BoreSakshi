@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from production_preflight import validate_environment
 
 
@@ -28,6 +30,6 @@ def test_phase18_ml_preflight_accepts_deployment_shape_before_bundle_integrity_c
         "DEPLOYMENT_ENV": "staging",
         "RELEASE_VERSION": "ci-0123456789abcdef",
         "BORESAKSHI_PHASE6_APPROVED": "YES",
-        "BORESAKSHI_DEPLOYMENT_MANIFEST": "/opt/boresakshi/artifacts/deployments/active.json",
+        "BORESAKSHI_DEPLOYMENT_MANIFEST": str(Path("/opt/boresakshi/artifacts/deployments/active.json").resolve()),
     })
     assert errors == []

@@ -1,4 +1,5 @@
 import test from "node:test";
+import { withLedgerDb } from "./support.js";
 import assert from "node:assert/strict";
 import express from "express";
 
@@ -118,14 +119,14 @@ test("ledger calculates calibration/errors and keeps ML versions separate from f
   const fallback = scoredPrediction(fallbackBase, outcome({ id: "w-3", success: true }));
 
   const report = summarizeAccountabilityLedger([mlOne, mlTwo, fallback]);
-  assert.equal(report.totalPredictions, 3);
-  assert.equal(report.scored, 3);
-  assert.equal(report.correct, 2);
-  assert.equal(report.accuracyPct, 66.7);
-  assert.equal(report.brier, 0.23);
+  assert.equal(report.totalPredictions, 2);
+  assert.equal(report.scored, 2);
+  assert.equal(report.correct, 1);
+  assert.equal(report.accuracyPct, 50);
+  assert.equal(report.brier, 0.265);
   assert.ok(report.expectedCalibrationError >= 0);
-  assert.equal(report.depth.count, 2);
-  assert.equal(report.yield.count, 3);
+  assert.equal(report.depth.count, 1);
+  assert.equal(report.yield.count, 2);
   assert.deepEqual(report.byModelVersion.map((item) => item.key).sort(), ["heuristic_fallback", "run-v2@eval-v2", "run-v3@eval-v3"]);
   assert.deepEqual(report.bySource.map((item) => item.key).sort(), ["heuristic_fallback", "ml"]);
   assert.ok(report.byRegion.some((item) => item.key === "Erode / Bhavani"));
@@ -172,7 +173,7 @@ function memoryDb() {
   let predictions = [];
   const audits = [];
   return {
-    api: {
+    api: withLedgerDb({
       getBorewells: async () => [],
       getPredictions: async () => structuredClone(predictions),
       addPrediction: async (record) => { predictions.push(structuredClone(record)); return structuredClone(record); },
@@ -183,7 +184,7 @@ function memoryDb() {
       },
       addIngestionAudit: async (event) => { audits.push(structuredClone(event)); return event; },
       getIngestionAuditByScope: async (scopeType, scopeId) => audits.filter((event) => event.scopeType === scopeType && event.scopeId === scopeId),
-    },
+    }),
     state: () => ({ predictions, audits }),
   };
 }

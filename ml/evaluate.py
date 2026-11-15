@@ -17,7 +17,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--inner-folds", type=int, default=3)
     parser.add_argument("--interval-coverage", type=float, default=0.90)
-    parser.add_argument("--min-rows", type=int, default=30)
+    parser.add_argument("--min-rows", type=int, default=300)
     parser.add_argument("--min-spatial-blocks", type=int, default=5)
     parser.add_argument("--calibration-bins", type=int, default=10)
     parser.add_argument("--bootstrap-iterations", type=int, default=500)

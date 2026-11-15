@@ -3,7 +3,7 @@
   "parameters": {
     "nearbyRadiusKm": 5,
     "densityRadiusKm": 2,
-    "spatialBlockDeg": 0.1
+    "spatialBlockDeg": 0.5
   },
   "layers": [
     {

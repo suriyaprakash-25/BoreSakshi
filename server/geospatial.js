@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 export const FEATURE_SCHEMA_VERSION = "1.0.0";
 export const DEFAULT_NEARBY_RADIUS_KM = 5;
 export const DEFAULT_DENSITY_RADIUS_KM = 2;
-export const DEFAULT_SPATIAL_BLOCK_DEG = 0.1;
+export const DEFAULT_SPATIAL_BLOCK_DEG = 0.5;
 
 export const SUPPORTED_LAYER_KINDS = [
   "dem",

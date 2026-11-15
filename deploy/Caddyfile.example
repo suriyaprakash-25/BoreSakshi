@@ -1,0 +1,11 @@
+# Public TLS proxy. Install as /etc/caddy/Caddyfile and replace the host name.
+# Caddy obtains and renews the certificate itself once DNS points at this server
+# and ports 80 and 443 are open.
+CHANGE_ME_PUBLIC_HOST {
+	encode gzip
+	request_body {
+		max_size 55MB
+	}
+	# This proxy plus the web nginx container are the two hops behind TRUST_PROXY=2.
+	reverse_proxy 127.0.0.1:8080
+}

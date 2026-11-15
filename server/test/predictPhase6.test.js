@@ -53,7 +53,7 @@ test("real ML response maps to the legacy frontend contract additively", async (
       isMock: false,
     }),
   };
-  const result = await predictBorewell({ lat: 11, lng: 77, nearbyLogs: nearby, client });
+  const result = await predictBorewell({ lat: 11.36, lng: 77.8, nearbyLogs: nearby, client });
   assert.equal(result.predictionSource, "ml");
   assert.equal(result.isMock, false);
   assert.deepEqual(result.depthBandFt, [210, 290]);
@@ -66,7 +66,7 @@ test("real ML response maps to the legacy frontend contract additively", async (
   assert.equal(result.confidenceReason.modelCoveragePct, 92);
 });
 
-test("ML failure never masquerades heuristic fallback as ML", async () => {
+test("ML failure returns an honest no-estimate, never a number", async () => {
   const client = {
     predict: async () => {
       const error = new Error("service down");
@@ -74,14 +74,14 @@ test("ML failure never masquerades heuristic fallback as ML", async () => {
       throw error;
     },
   };
-  const result = await predictBorewell({ lat: 11, lng: 77, nearbyLogs: nearby, client });
-  assert.equal(result.predictionSource, "heuristic_fallback");
-  assert.equal(result.isMock, true);
+  const result = await predictBorewell({ lat: 11.36, lng: 77.8, nearbyLogs: nearby, client });
+  assert.equal(result.estimateAvailable, false);
+  assert.equal(result.noEstimateReason, "MODEL_UNAVAILABLE");
+  assert.equal(result.predictionSource, "no_estimate");
+  assert.equal(result.successProbability, null);
   assert.equal(result.modelAvailable, false);
   assert.equal(result.modelVersion, null);
   assert.equal(result.featureSnapshotRef, null);
-  assert.match(result.coverageWarning, /heuristic fallback/i);
-  assert.match(result.basis, /ML prediction is unavailable/i);
-  assert.match(result.fallbackReason, /ML_NETWORK_ERROR/);
   assert.equal(result.uncertainty.available, false);
+  assert.doesNotMatch(JSON.stringify(result), /ML_NETWORK_ERROR/);
 });

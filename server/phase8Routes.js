@@ -17,75 +17,13 @@ import {
   reviewReopenSchema,
   reviewStartSchema,
 } from "./phase9Validation.js";
-import { reopenPredictionAccountability, scorePredictionAgainstOutcome } from "./accountability.js";
+import { reopenPredictionsForRecord, scoreVerifiedOutcome } from "./ledgerMatching.js";
+import { borewellFollowUpSchema } from "./validation.js";
 
 const rawEvidence = express.raw({ type: () => true, limit: process.env.RIG_MEDIA_UPLOAD_LIMIT || "50mb" });
 
 function decodeFilename(value) {
   try { return decodeURIComponent(String(value || "evidence")); } catch { return String(value || "evidence"); }
-}
-
-async function appendPredictionAudit(db, { prediction, action, actor, details = {}, now }) {
-  if (typeof db.addIngestionAudit !== "function") return;
-  await db.addIngestionAudit({
-    id: nanoid(14),
-    batchId: null,
-    recordId: null,
-    scopeType: "prediction_accountability",
-    scopeId: prediction.id,
-    action,
-    actor: actor ? { id: actor.id, name: actor.name, role: actor.role || "admin" } : { id: "system", name: "BoreSakshi", role: "system" },
-    details,
-    createdAt: now,
-  });
-}
-
-async function closeNearbyPredictions({ db, record, distanceKm, NEAR_KM, now, actor }) {
-  const openPreds = (await db.getPredictions()).filter((p) => p.actual == null);
-  const drilledAtMs = Date.parse(record.drilledAt || record.drilledDate || "");
-  let scored = 0;
-  for (const prediction of openPreds) {
-    const predictionAtMs = Date.parse(prediction.createdAt || prediction.predictionTimestamp || "");
-    if (!Number.isFinite(drilledAtMs) || !Number.isFinite(predictionAtMs) || predictionAtMs > drilledAtMs) continue;
-    const matchDistanceKm = distanceKm({ lat: record.lat, lng: record.lng }, { lat: prediction.lat, lng: prediction.lng });
-    if (matchDistanceKm > NEAR_KM) continue;
-    const patch = scorePredictionAgainstOutcome(prediction, record, { now, matchDistanceKm });
-    await db.updatePrediction(prediction.id, patch);
-    await appendPredictionAudit(db, {
-      prediction,
-      action: "verified_outcome_scored",
-      actor,
-      now,
-      details: {
-        borewellId: record.id,
-        verificationStatus: record.verificationStatus || (record.verified ? "VERIFIED" : "UNKNOWN"),
-        matchDistanceKm,
-        successCorrect: patch.correct,
-        metrics: patch.accountability.metrics,
-      },
-    });
-    scored += 1;
-  }
-  return scored;
-}
-
-async function reopenPredictionsForRecord(db, borewellId, { actor, reason, now }) {
-  const predictions = await db.getPredictions();
-  let reopened = 0;
-  for (const prediction of predictions) {
-    if (prediction.actual?.borewellId !== borewellId && prediction.accountability?.actual?.borewellId !== borewellId) continue;
-    const patch = reopenPredictionAccountability(prediction, { now, reason });
-    await db.updatePrediction(prediction.id, patch);
-    await appendPredictionAudit(db, {
-      prediction,
-      action: "outcome_reopened",
-      actor,
-      now,
-      details: { borewellId, reason },
-    });
-    reopened += 1;
-  }
-  return reopened;
 }
 
 async function appendRigVerificationAudit(db, { record, action, actor, details = {} }) {
@@ -105,8 +43,10 @@ async function appendRigVerificationAudit(db, { record, action, actor, details =
   return event;
 }
 
-async function findBorewell(db, id) {
-  return (await db.getAllBorewells()).find((item) => item.id === id) || null;
+// Evidence lives on the local disk, which serverless platforms do not keep.
+function requireDurableEvidenceStorage(_req, res, next) {
+  if (!process.env.VERCEL) return next();
+  res.status(503).json({ error: "Evidence upload is not available on this deployment.", code: "EVIDENCE_STORAGE_UNAVAILABLE" });
 }
 
 export function createPhase8Router({
@@ -151,7 +91,7 @@ export function createPhase8Router({
     });
   });
 
-  router.post("/api/operator/evidence", requireAuth, rawEvidence, async (req, res, next) => {
+  router.post("/api/operator/evidence", requireAuth, requireDurableEvidenceStorage, rawEvidence, async (req, res, next) => {
     try {
       const mediaType = String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
       const originalName = decodeFilename(req.headers["x-file-name"]);
@@ -232,6 +172,21 @@ export function createPhase8Router({
     }
   });
 
+  // A well that dries by summer is a failure for the farmer, so the operator can
+  // report what happened later. Follow-ups append; the drilling record is unchanged.
+  router.post("/api/borewells/:id/follow-up", requireAuth, validate(borewellFollowUpSchema), async (req, res, next) => {
+    try {
+      const record = await db.getBorewell(req.params.id);
+      if (!record) return res.status(404).json({ error: "Borewell log not found" });
+      if (record.operatorId !== req.operator.id) return res.status(403).json({ error: "You can only update your own logs" });
+      const today = new Date().toISOString().slice(0, 10);
+      if (req.body.observedOn > today) return res.status(400).json({ error: "The observation date cannot be in the future" });
+      if (req.body.observedOn < String(record.drilledDate || "")) return res.status(400).json({ error: "The observation date cannot be before drilling" });
+      const followUp = { ...req.body, reportedAt: new Date().toISOString() };
+      res.status(201).json(await db.addBorewellFollowUp(record.id, followUp));
+    } catch (error) { next(error); }
+  });
+
   router.get("/api/borewells", async (_req, res, next) => {
     try {
       const records = await db.getBorewells();
@@ -241,7 +196,7 @@ export function createPhase8Router({
 
   router.get("/api/borewells/:borewellId/evidence/:evidenceId", requireAuth, async (req, res, next) => {
     try {
-      const record = await findBorewell(db, req.params.borewellId);
+      const record = await db.getBorewell(req.params.borewellId);
       if (!record) return res.status(404).json({ error: "Borewell log not found" });
       if (req.operator.role !== "admin" && record.operatorId !== req.operator.id) {
         return res.status(403).json({ error: "You cannot access evidence for another operator's log" });
@@ -259,7 +214,7 @@ export function createPhase8Router({
 
   router.patch("/api/admin/logs/:id", requireAuth, requireAdmin, validate(adminLogPatchSchema), async (req, res, next) => {
     try {
-      const existing = await findBorewell(db, req.params.id);
+      const existing = await db.getBorewell(req.params.id);
       if (!existing) return res.status(404).json({ error: "Log not found" });
       const now = new Date().toISOString();
       const patch = { ...req.body };
@@ -307,7 +262,7 @@ export function createPhase8Router({
       let ledgerReopened = 0;
 
       if (trustedNow && !wasTrustedAndScored) {
-        const scored = await closeNearbyPredictions({ db, record: updated, distanceKm, NEAR_KM, now, actor: req.operator });
+        const scored = await scoreVerifiedOutcome({ db, record: updated, now, actor: req.operator });
         updated = await db.updateBorewell(updated.id, {
           ledgerScoredAt: now,
           ledgerScoredPredictions: scored,

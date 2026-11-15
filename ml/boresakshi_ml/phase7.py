@@ -189,8 +189,8 @@ def write_checksummed_report(report: dict[str, Any], output_dir: str | Path) -> 
     target_dir.mkdir(parents=True, exist_ok=True)
     report_path = target_dir / "phase7-activation-report.json"
     text = json.dumps(report, indent=2, sort_keys=True) + "\n"
-    report_path.write_text(text, encoding="utf-8")
+    report_path.write_text(text, encoding="utf-8", newline="\n")
     checksum = _sha256_text(text)
     checksum_path = target_dir / "phase7-activation-report.sha256"
-    checksum_path.write_text(f"{checksum}  {report_path.name}\n", encoding="utf-8")
+    checksum_path.write_text(f"{checksum}  {report_path.name}\n", encoding="utf-8", newline="\n")
     return report_path, checksum_path

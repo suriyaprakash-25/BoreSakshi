@@ -2,7 +2,7 @@ import express from "express";
 import { nanoid } from "nanoid";
 
 import { predictSchema } from "./validation.js";
-import { predictBorewell, distanceKm, NEAR_KM } from "./predict.js";
+import { noEstimate, predictBorewell, distanceKm, NEAR_KM } from "./predict.js";
 import { isTrustedOutcome } from "./rigData.js";
 import { createPhase15Router } from "./phase15Routes.js";
 import {
@@ -25,6 +25,18 @@ function auditEvent({ prediction, action, actor = null, details = {}, now = new 
     createdAt: now,
   };
 }
+
+// One ledger record per ~110 m cell, model and 30-day period, so repeat taps
+// cannot inflate the count of scored predictions.
+const DEDUPE_PERIOD_DAYS = 30;
+export function predictionDedupeKey({ lat, lng, modelVersion, createdAt }) {
+  const period = Math.floor(Date.parse(createdAt) / (DEDUPE_PERIOD_DAYS * 24 * 60 * 60 * 1000));
+  return `${lat.toFixed(3)},${lng.toFixed(3)}|${modelVersion || "unknown"}|${period}`;
+}
+
+// Half-km steps: exact distances from a chosen pin would let anyone triangulate
+// a well that the public map deliberately blurs.
+const blurredDistanceKm = (km) => Math.max(0.5, Math.round(km * 2) / 2);
 
 function queryValue(value) {
   return value == null ? "" : String(value).trim();
@@ -59,20 +71,27 @@ export function createPhase11Router({
   router.post("/api/predict", validate(predictSchema), async (req, res, next) => {
     try {
       const { lat, lng, save: shouldSave = true } = req.body;
-      const nearbyLogs = (await db.getBorewells())
+      const nearbyLogs = (await db.getBorewellsNear({ lat, lng, radiusKm: NEAR_KM }))
         .filter(isTrustedOutcome)
         .map((borewell) => ({ ...borewell, distanceKm: distanceKm({ lat, lng }, borewell) }))
         .filter((borewell) => borewell.distanceKm <= NEAR_KM)
         .sort((a, b) => a.distanceKm - b.distanceKm);
 
       const prediction = await predictor({ lat, lng, nearbyLogs });
+      // Silent pilot: the estimate enters the ledger but the farmer doesn't see it,
+      // so the model is scored on real drilling before anyone relies on it.
+      const silent = process.env.ML_SILENT_PILOT === "YES" && prediction.estimateAvailable !== false;
       let saved = null;
-      if (shouldSave) {
+      // "No estimate" is not a prediction, so it never enters the ledger.
+      if (shouldSave && prediction.estimateAvailable !== false) {
         const createdAt = new Date().toISOString();
         const record = {
           id: nanoid(10),
           lat,
           lng,
+          location: { type: "Point", coordinates: [lng, lat] },
+          dedupeKey: predictionDedupeKey({ lat, lng, modelVersion: prediction.modelVersion, createdAt }),
+          silentPilot: silent,
           ...prediction,
           actual: null,
           correct: null,
@@ -80,7 +99,7 @@ export function createPhase11Router({
         };
         record.accountability = buildPredictionAccountability(record);
         saved = await db.addPrediction(record);
-        if (typeof db.addIngestionAudit === "function") {
+        if (saved.id === record.id && typeof db.addIngestionAudit === "function") {
           await db.addIngestionAudit(auditEvent({
             prediction: record,
             action: "prediction_issued",
@@ -102,17 +121,16 @@ export function createPhase11Router({
       }
 
       res.json({
-        ...prediction,
+        ...(silent ? noEstimate({ lat, lng, nearbyLogs, reason: "NOT_RELEASED" }) : prediction),
         predictionId: saved?.id ?? null,
         accountabilityStatus: saved?.accountability?.status ?? null,
         nearbyVerifiedLogs: nearbyLogs.length,
         nearby: nearbyLogs.slice(0, 20).map((borewell) => ({
           id: borewell.id,
-          distanceKm: Math.round(borewell.distanceKm * 100) / 100,
+          distanceKm: blurredDistanceKm(borewell.distanceKm),
           depthFt: borewell.depthFt ?? null,
           success: borewell.success,
           strata: borewell.strata || "",
-          placeName: borewell.placeName || "",
           createdAt: borewell.createdAt,
         })),
       });

@@ -13,10 +13,7 @@ const SESSION_TTL_HOURS = Math.min(24 * 30, Math.max(1, Number(process.env.SESSI
 const BCRYPT_ROUNDS = Math.min(15, Math.max(10, Number(process.env.BCRYPT_ROUNDS) || 12));
 export const SESSION_COOKIE_NAME = process.env.NODE_ENV === "production" ? "__Host-boresakshi_session" : "boresakshi_session";
 
-if (!JWT_SECRET) {
-  console.error("[BoreSakshi] FATAL: JWT_SECRET is not set. Set it in server/.env");
-  process.exit(1);
-}
+if (!JWT_SECRET) throw new Error("JWT_SECRET is not set. Set it in server/.env");
 
 const publicOperator = (op) => ({
   id: op.id,
@@ -146,6 +143,7 @@ export async function signup(req, res) {
     role: "operator",
     status: "active",
     verified: false,
+    consent: { version: req.body.consentVersion, acceptedAt: createdAt },
     createdAt,
   };
   try {
@@ -154,7 +152,6 @@ export async function signup(req, res) {
     if (err.code === 11000) return res.status(409).json({ error: "An account with this phone already exists — sign in instead" });
     throw err;
   }
-  await db.seedAssignmentsForOperator(operator.id);
   await issueSession(operator, req, res);
   await securityAudit({ action: "account_created", operator, req, details: { recoveryCodeIssued: true } });
   res.status(201).json({

@@ -39,6 +39,17 @@ export function buildOperatorBorewellRecord({ id, body, operator, evidence, subm
     operatorName: operator.name,
     operatorVerifiedAtSubmission: operator.verified === true,
     language: body.language ?? "ta",
+    predictionId: body.predictionId || null,
+    drillDetails: {
+      waterStrikes: body.waterStrikes || [],
+      stopReason: body.stopReason || null,
+      yieldMethod: body.yieldMethod || null,
+      siteChosenBy: body.siteChosenBy || null,
+      depthToHardRockFt: body.depthToHardRockFt ?? null,
+    },
+    // G1: authenticated app record with GPS and photo evidence.
+    confidenceGrade: "G1",
+    followUps: [],
     evidence,
     evidenceSummary: {
       photoCount: evidence.filter((item) => item.kind === "photo").length,

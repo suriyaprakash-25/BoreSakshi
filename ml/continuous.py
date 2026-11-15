@@ -119,7 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
     stage.add_argument("--out", default="continuous-runs")
     stage.add_argument("--run-id", required=True)
     stage.add_argument("--seed", type=int, default=42)
-    stage.add_argument("--min-rows", type=int, default=30)
+    stage.add_argument("--min-rows", type=int, default=300)
     stage.add_argument("--profile", choices=["standard", "test"], default="standard")
     stage.add_argument("--algorithms", default="")
     stage.add_argument("--folds", type=int, default=5)

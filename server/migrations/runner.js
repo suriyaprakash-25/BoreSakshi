@@ -1,8 +1,10 @@
 import "dotenv/config";
+import { pathToFileURL } from "url";
 import { MongoClient } from "mongodb";
 import { migration as phase18ProductionV1 } from "./phase18-production-v1.js";
+import { migration as pilotReadinessV1 } from "./pilot-readiness-v1.js";
 
-export const migrations = [phase18ProductionV1];
+export const migrations = [phase18ProductionV1, pilotReadinessV1];
 
 export async function migrationStatus(database) {
   const applied = await database.collection("schema_migrations")
@@ -64,7 +66,7 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
     console.error(`MIGRATION_FAILED: ${error.message}`);
     process.exit(2);

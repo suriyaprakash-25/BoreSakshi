@@ -6,12 +6,12 @@ import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import { nanoid } from "nanoid";
 import { db, connectDB, pingDB } from "./db.js";
-import { predictBorewell, distanceKm, NEAR_KM } from "./predict.js";
+import { distanceKm, NEAR_KM } from "./predict.js";
 import { mlClient } from "./mlClient.js";
 import { signup, signin, signout, requireAuth, requireAdmin } from "./auth.js";
 import {
-  validate, signupSchema, signinSchema, predictSchema, borewellSchema,
-  adminOperatorPatchSchema, adminLogPatchSchema,
+  validate, signupSchema, signinSchema, borewellSchema,
+  adminLogPatchSchema,
   ingestionSourceSchema, ingestionReviewSchema,
   datasetAssetSchema, datasetAssetReviewSchema,
 } from "./validation.js";
@@ -41,7 +41,20 @@ app.use(cors({
 }));
 app.use(cookieParser());
 app.use(express.json({ limit: "10kb" })); // reject oversized JSON payloads (→ 413)
-app.use(morgan("dev")); // request logging
+app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev")); // request logging
+
+// Requests can arrive before Mongo is ready (always on a serverless cold start).
+// Liveness stays outside this so a database outage is reported, not hidden.
+app.use(async (req, res, next) => {
+  if (req.path === "/api/health/live") return next();
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error("[BoreSakshi] MongoDB unavailable:", error.message);
+    res.status(503).json({ error: "The service is temporarily unavailable. Please try again." });
+  }
+});
 
 // Behind a reverse proxy (Render/Railway, AWS ALB) set TRUST_PROXY=1 so client IPs
 // and therefore IP rate limiting — are read correctly. Otherwise, rate limiters
@@ -106,73 +119,6 @@ app.use(createPhase8Router({
   NEAR_KM,
 }));
 
-// ----------------------------------------------------------------------------
-// 1) LEGACY LOG A BOREWELL HANDLER
-// Phase 8 intercepts POST /api/borewells above. This remains temporarily for
-// reviewability/backward comparison and will be removed only after the stacked
-// Phase 8 review is accepted.
-// ----------------------------------------------------------------------------
-app.post("/api/borewells", requireAuth, validate(borewellSchema), asyncHandler(async (req, res) => {
-  const { lat, lng, placeName, depthFt, strata, waterStrikeFt, yieldLpm, success, language } = req.body;
-  const createdAt = new Date().toISOString();
-  const record = {
-    id: nanoid(10),
-    schemaVersion: DATASET_SCHEMA_VERSION,
-    lat, lng,
-    location: { type: "Point", coordinates: [lng, lat] },
-    placeName: placeName?.trim() || "",
-    depthFt: depthFt ?? null,
-    strata: strata ?? "",
-    waterStrikeFt: waterStrikeFt ?? null,
-    yieldLpm: yieldLpm ?? null,
-    success,
-    drilledAt: createdAt,
-    drilledDate: createdAt.slice(0, 10),
-    operatorId: req.operator.id,
-    operatorName: req.operator.name,
-    language: language ?? "ta",
-    flagged: false,
-    flagReason: "",
-    verified: false,
-    createdAt,
-    datasetEligibility: { eligible: true, status: "operator_submission" },
-    provenance: {
-      sourceType: "operator",
-      sourceName: "BoreSakshi authenticated operator submission",
-      sourceRecordId: "",
-      importedAt: createdAt,
-      importedBy: { id: req.operator.id, name: req.operator.name },
-    },
-  };
-  record.provenance.sourceRecordId = record.id;
-  record.ingestionFingerprint = buildDuplicateFingerprint(record, {
-    sourceType: "operator",
-    sourceName: "BoreSakshi authenticated operator submission",
-  });
-  await db.addBorewell(record);
-
-  const pending = await db.getAssignmentsByOperator(req.operator.id, { status: "pending" });
-  const near = pending.find((a) => distanceKm({ lat, lng }, { lat: a.lat, lng: a.lng }) <= 2);
-  if (near) await db.updateAssignment(near.id, { status: "logged", loggedBorewellId: record.id, loggedAt: record.createdAt });
-
-  const openPreds = (await db.getPredictions()).filter((p) => p.actual == null);
-  let scoredPredictions = 0;
-  for (const p of openPreds) {
-    if (distanceKm({ lat, lng }, { lat: p.lat, lng: p.lng }) <= NEAR_KM) {
-      const predictedSuccess = p.successProbability >= 50;
-      await db.updatePrediction(p.id, {
-        actual: { success: record.success, depthFt: record.depthFt, borewellId: record.id, closedAt: record.createdAt },
-        correct: predictedSuccess === record.success,
-      });
-      scoredPredictions++;
-    }
-  }
-
-  res.status(201).json({ ...record, scoredPredictions });
-}));
-
-app.get("/api/borewells", asyncHandler(async (_req, res) => res.json(await db.getBorewells())));
-
 app.get("/api/borewells/mine", requireAuth, asyncHandler(async (req, res) =>
   res.json(await db.getBorewellsByOperator(req.operator.id))
 ));
@@ -180,71 +126,6 @@ app.get("/api/borewells/mine", requireAuth, asyncHandler(async (req, res) =>
 app.get("/api/assignments", requireAuth, asyncHandler(async (req, res) =>
   res.json(await db.getAssignmentsByOperator(req.operator.id, { status: "pending" }))
 ));
-
-// ----------------------------------------------------------------------------
-// 2) PREDICT for a location (farmer drops a pin). Stored so we can score it later.
-// Phase 6: only verified, unflagged, dataset-eligible drill outcomes may influence
-// model or fallback evidence. The public response keeps the existing UI fields.
-// ----------------------------------------------------------------------------
-app.post("/api/predict", validate(predictSchema), asyncHandler(async (req, res) => {
-  const { lat, lng, save: shouldSave = true } = req.body;
-
-  const nearbyLogs = (await db.getBorewells())
-    .map((b) => ({ ...b, distanceKm: distanceKm({ lat, lng }, b) }))
-    .filter((b) => b.distanceKm <= NEAR_KM)
-    .filter((b) => b.verified === true && b.flagged !== true && b.datasetEligibility?.eligible !== false)
-    .sort((a, b) => a.distanceKm - b.distanceKm);
-
-  const prediction = await predictBorewell({ lat, lng, nearbyLogs });
-
-  let saved = null;
-  if (shouldSave) {
-    saved = await db.addPrediction({
-      id: nanoid(10),
-      lat, lng,
-      ...prediction,
-      actual: null,
-      correct: null,
-      createdAt: new Date().toISOString(),
-    });
-  }
-  res.json({
-    ...prediction,
-    predictionId: saved?.id ?? null,
-    nearbyVerifiedLogs: nearbyLogs.length,
-    nearby: nearbyLogs.slice(0, 20).map((b) => ({
-      id: b.id,
-      distanceKm: Math.round(b.distanceKm * 100) / 100,
-      depthFt: b.depthFt ?? null,
-      success: b.success,
-      strata: b.strata || "",
-      placeName: b.placeName || "",
-      createdAt: b.createdAt,
-    })),
-  });
-}));
-
-// ----------------------------------------------------------------------------
-// 3) ACCOUNTABILITY LEDGER — public accuracy record
-// ----------------------------------------------------------------------------
-app.get("/api/ledger", asyncHandler(async (_req, res) => {
-  const preds = await db.getPredictions();
-  const closed = preds.filter((p) => p.actual != null);
-  const correct = closed.filter((p) => p.correct).length;
-  const accuracy = closed.length ? Math.round((correct / closed.length) * 100) : null;
-  res.json({
-    totalPredictions: preds.length,
-    scored: closed.length,
-    correct,
-    accuracyPct: accuracy,
-    recent: closed.slice(-10).reverse().map((p) => ({
-      id: p.id, lat: p.lat, lng: p.lng,
-      predictedSuccessPct: p.successProbability,
-      actualSuccess: p.actual.success,
-      correct: p.correct,
-    })),
-  });
-}));
 
 // ----------------------------------------------------------------------------
 // 4) ADMIN — platform oversight. Every route requires an admin account.
@@ -258,31 +139,6 @@ app.get("/api/admin/operators", ...admin, asyncHandler(async (_req, res) =>
 app.get("/api/admin/logs", ...admin, asyncHandler(async (_req, res) =>
   res.json(await db.getAllBorewells())
 ));
-
-app.patch("/api/admin/operators/:id", ...admin, validate(adminOperatorPatchSchema), asyncHandler(async (req, res) => {
-  const updated = await db.updateOperator(req.params.id, req.body);
-  if (!updated) return res.status(404).json({ error: "Operator not found" });
-  const { passwordHash, ...safe } = updated;
-  res.json(safe);
-}));
-
-// Phase 8 intercepts PATCH /api/admin/logs/:id above so verification drives ledger
-// eligibility. The older handler remains here until Phase 8 review is accepted.
-app.patch("/api/admin/logs/:id", ...admin, validate(adminLogPatchSchema), asyncHandler(async (req, res) => {
-  const patch = { ...req.body };
-  if (patch.flagged === true) {
-    patch.flagReason = (req.body.flagReason || "").trim();
-    patch.flaggedAt = new Date().toISOString();
-    patch.flaggedBy = req.operator.name;
-  } else if (patch.flagged === false) {
-    patch.flagReason = "";
-    patch.flaggedAt = null;
-    patch.flaggedBy = null;
-  }
-  const updated = await db.updateBorewell(req.params.id, patch);
-  if (!updated) return res.status(404).json({ error: "Log not found" });
-  res.json(updated);
-}));
 
 // ----------------------------------------------------------------------------
 // 5) PHASE 2 — REAL BOREWELL DATA COLLECTION PIPELINE (admin only)
@@ -659,15 +515,16 @@ app.post("/api/admin/ingestion/batches/:id/publish", ...admin, asyncHandler(asyn
 app.use(notFound);
 app.use(errorHandler);
 
-connectDB().catch((err) => {
-  console.error("Could not connect to MongoDB at", process.env.MONGODB_URI || "mongodb://localhost:27017/");
-  console.error("Is MongoDB running? Start it (or open MongoDB Compass) and try again.");
-  console.error(err.message);
-  if (!process.env.VERCEL) process.exit(1);
-});
+const startServer = () => app.listen(PORT, () => console.log(`BoreSakshi API running on http://localhost:${PORT}`));
 
-if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
-  app.listen(PORT, () => console.log(`BoreSakshi API running on http://localhost:${PORT}`));
+// Vercel calls the exported app; everywhere else this process owns the port.
+if (!process.env.VERCEL) {
+  connectDB().then(startServer).catch((err) => {
+    console.error("Could not connect to MongoDB at", process.env.MONGODB_URI || "mongodb://localhost:27017/");
+    console.error("Is MongoDB running? Start it (or open MongoDB Compass) and try again.");
+    console.error(err.message);
+    process.exit(1);
+  });
 }
 
 process.on("unhandledRejection", (reason) => console.error("[BoreSakshi] Unhandled promise rejection:", reason));

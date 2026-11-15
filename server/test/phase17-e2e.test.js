@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import http from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import net from "node:net";
@@ -23,6 +24,51 @@ function getFreePort() {
       server.close((error) => error ? reject(error) : resolve(port));
     });
   });
+}
+
+// A stand-in for the Python service returning a contract-valid model response, so
+// the lifecycle exercises a real prediction reaching the ledger.
+function mlPrediction({ predictionTimestamp }) {
+  const featureVersion = "e2e-dataset:features-1.0.0";
+  const featureSnapshot = {
+    ref: "fsnap:e2e",
+    datasetVersion: "e2e-dataset",
+    featureVersion,
+    featureManifestSha256: "a".repeat(64),
+    predictionAsOf: predictionTimestamp,
+  };
+  return {
+    successProbability: 71.4,
+    estimatedDepthFt: { min: 240, estimate: 280, max: 320 },
+    estimatedYieldLpm: { min: 30, estimate: 45, max: 60 },
+    confidence: "Medium",
+    geologySummary: "Fractured gneiss",
+    predictionSource: "ml",
+    isMock: false,
+    modelVersion: "e2e-run@e2e-eval",
+    featureVersion,
+    predictionContractVersion: "1.0.0",
+    featureSnapshotRef: featureSnapshot.ref,
+    featureSnapshot,
+    predictionTimestamp,
+    explanations: [],
+    uncertainty: { success: { normalizedEntropy: 0.5 } },
+    featureCoverage: { coveragePct: 92 },
+    coverageWarning: null,
+  };
+}
+
+async function startMlStub() {
+  const server = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(req.url === "/ml/predict" ? mlPrediction(JSON.parse(body)) : { ok: true, ready: true }));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return server;
 }
 
 function responseCookie(response) {
@@ -90,6 +136,7 @@ test("Phase 17 E2E: register -> login -> prediction -> rig upload -> verify -> l
     createdAt: new Date().toISOString(),
   });
 
+  const mlStub = await startMlStub();
   const logs = { value: "" };
   const child = spawn(process.execPath, ["index.js"], {
     cwd: serverDir,
@@ -102,10 +149,7 @@ test("Phase 17 E2E: register -> login -> prediction -> rig upload -> verify -> l
       RIG_EVIDENCE_SECRET: "phase17-e2e-evidence-secret-distinct-and-long-enough",
       FRONTEND_URL: frontendOrigin,
       NODE_ENV: "test",
-      ML_SERVICE_URL: "http://127.0.0.1:65531",
-      ML_SERVICE_TIMEOUT_MS: "50",
-      ML_SERVICE_RETRIES: "0",
-      ML_CIRCUIT_FAILURE_THRESHOLD: "1",
+      ML_SERVICE_URL: `http://127.0.0.1:${mlStub.address().port}`,
       RIG_MEDIA_DIR: evidenceDir,
       MONITORING_TOKEN: "phase17-monitoring-token-long-enough",
     },
@@ -116,6 +160,7 @@ test("Phase 17 E2E: register -> login -> prediction -> rig upload -> verify -> l
 
   t.after(async () => {
     await stopChild(child);
+    await new Promise((resolve) => mlStub.close(resolve));
     await database.dropDatabase().catch(() => {});
     await mongo.close().catch(() => {});
     await rm(evidenceDir, { recursive: true, force: true });
@@ -126,7 +171,7 @@ test("Phase 17 E2E: register -> login -> prediction -> rig upload -> verify -> l
   const operatorPassword = "OperatorPass!2026";
   const signup = await request(baseUrl, "/api/auth/signup", {
     method: "POST",
-    json: { name: "Phase 17 Rig", phone: "9000000002", password: operatorPassword, confirmPassword: operatorPassword },
+    json: { name: "Phase 17 Rig", phone: "9000000002", password: operatorPassword, confirmPassword: operatorPassword, consentAccepted: true, consentVersion: "e2e" },
   });
   assert.equal(signup.response.status, 201, JSON.stringify(signup.payload));
   assert.match(signup.payload.recoveryCode, /^BSK-/);
@@ -167,8 +212,17 @@ test("Phase 17 E2E: register -> login -> prediction -> rig upload -> verify -> l
   assert.equal(prediction.response.status, 200, JSON.stringify(prediction.payload));
   assert.ok(prediction.payload.predictionId);
   assert.equal(prediction.payload.accountabilityStatus, "PENDING_OUTCOME");
-  assert.equal(prediction.payload.predictionSource, "heuristic_fallback");
-  assert.equal(prediction.payload.isMock, true);
+  assert.equal(prediction.payload.predictionSource, "ml");
+  assert.equal(prediction.payload.isMock, false);
+
+  const repeatTap = await request(baseUrl, "/api/predict", { method: "POST", json: { lat: 11.38301, lng: 77.89501 } });
+  assert.equal(repeatTap.payload.predictionId, prediction.payload.predictionId);
+
+  const outside = await request(baseUrl, "/api/predict", { method: "POST", json: { lat: 28.61, lng: 77.2 } });
+  assert.equal(outside.response.status, 200);
+  assert.equal(outside.payload.estimateAvailable, false);
+  assert.equal(outside.payload.noEstimateReason, "OUTSIDE_PILOT_AREA");
+  assert.equal(outside.payload.predictionId, null);
 
   // The field schema stores drilling completion as a date-only midnight timestamp.
   // Backdate the controlled prediction fixture one day so the accountability matcher
@@ -251,6 +305,8 @@ test("Phase 17 E2E: register -> login -> prediction -> rig upload -> verify -> l
   assert.equal("operatorId" in publicWells.payload[0], false);
   assert.equal("evidence" in publicWells.payload[0], false);
   assert.equal("gps" in publicWells.payload[0], false);
+  assert.equal(publicWells.payload[0].lat, 11.38);
+  assert.equal(publicWells.payload[0].lng, 77.89);
 
   const scoredLedger = await request(baseUrl, "/api/ledger");
   assert.equal(scoredLedger.response.status, 200);

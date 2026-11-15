@@ -27,7 +27,7 @@ This document breaks down the step-by-step pipeline of how the **BoreSakshi** pl
 3. **Estimated Yield** (Liters Per Minute).
 
 ## Step 5: The Accountability Ledger (Database)
-**What it does:** Maintains a tamper-proof, public record of drilling outcomes.
+**What it does:** Maintains an audited, public record of drilling outcomes.
 **Description:** If the user is a logged-in Rig Operator, they use this phase of the pipeline to submit an outcome report after drilling. This data is permanently logged into the system’s ledger. It serves two purposes:
 - It feeds back into the Prediction Engine to make future predictions in that area more accurate.
 - It builds a public reputation profile for the operator, forcing transparency and accountability within the industry.

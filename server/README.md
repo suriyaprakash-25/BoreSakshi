@@ -21,7 +21,7 @@ POST /api/predict
   → later close it against a verified drilling outcome in the accountability ledger
 ```
 
-If Python is unavailable, times out, is not approved/ready, rejects low feature coverage, or the circuit breaker is open, the API returns the existing deterministic heuristic only as an explicitly labelled `heuristic_fallback`. It is never presented as ML.
+If Python is unavailable, times out, is not approved/ready, rejects low feature coverage, or the circuit breaker is open, the API returns an honest "no estimate" with the verified wells nearby. No guessed number is shown or stored.
 
 ## Run it
 
@@ -47,7 +47,7 @@ npm run test:phase3
 npm run test:phase6
 ```
 
-The Phase 6 Node suite covers retry policy, non-retryable model-domain errors, the circuit breaker, ML compatibility mapping, and explicit fallback labeling.
+The Phase 6 Node suite covers retry policy, non-retryable model-domain errors, the circuit breaker, ML compatibility mapping, and the no-estimate response.
 
 The live Phase 2 HTTP contract test is intentionally write-gated and must target a disposable test database/server:
 
@@ -63,7 +63,7 @@ npm run test:phase2:contract
 | Method | Route | Purpose |
 |---|---|---|
 | GET | `/api/health` | Mongo/API health plus Python ML readiness/circuit metadata |
-| POST | `/api/predict` | Farmer pin → calibrated ML prediction, or explicitly labelled fallback |
+| POST | `/api/predict` | Farmer pin → calibrated ML prediction, or an honest no-estimate response |
 | POST | `/api/borewells` | Authenticated operator logs a completed job |
 | GET | `/api/borewells` | Public map dataset |
 | GET | `/api/ledger` | Public prediction-vs-actual accuracy record |
@@ -84,7 +84,7 @@ ML_CIRCUIT_COOLDOWN_MS=30000
 
 Retryable transport/5xx/429 failures can trigger the circuit breaker. Model-domain 4xx responses such as `INSUFFICIENT_FEATURE_COVERAGE` are not retried and do not count as service-health failures.
 
-`GET /api/health` keeps Node/Mongo availability separate from ML readiness: the API can remain healthy while reporting the Python service as unavailable and serving a visibly labelled fallback.
+`GET /api/health` keeps Node/Mongo availability separate from ML readiness: the API can remain healthy while reporting the Python service as unavailable and answering no-estimate.
 
 ## Prediction provenance persisted
 
@@ -99,16 +99,14 @@ Real ML predictions additively retain:
 - `coverageWarning`
 - model explanations
 
-Fallback predictions retain:
+A no-estimate response has:
 
-- `predictionSource = "heuristic_fallback"`
-- `isMock = true`
-- `modelAvailable = false`
-- `modelVersion = null`
-- a visible fallback warning/reason
-- no calibrated uncertainty claim
+- `estimateAvailable = false`
+- `predictionSource = "no_estimate"`
+- `noEstimateReason`: `OUTSIDE_PILOT_AREA`, `LOW_COVERAGE` or `MODEL_UNAVAILABLE`
+- null probability, depth, yield, confidence and rock type
 
-This metadata is saved with the prediction without changing the ledger's existing success-threshold scoring behavior.
+It is not saved to the ledger. Older `heuristic_fallback` records stay visible in the per-source breakdown, but they are never scored and never count towards public accuracy.
 
 ## Phase 2 ingestion API (admin only)
 

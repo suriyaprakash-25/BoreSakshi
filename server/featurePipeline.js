@@ -99,7 +99,7 @@ export function buildFeatureDataset({
   borewells = targets,
   nearbyRadiusKm = 5,
   densityRadiusKm = 2,
-  spatialBlockDeg = 0.1,
+  spatialBlockDeg = 0.5,
   generatedAt = new Date().toISOString(),
 }) {
   const manifestCheck = validateLayerManifest(manifest);

@@ -65,7 +65,7 @@ NODATA_value -9999
 104 106 108 110 112
 """
     grid_path = root / "dem.asc"
-    grid_path.write_text(grid, encoding="utf-8")
+    grid_path.write_text(grid, encoding="utf-8", newline="\n")
     sha = hashlib.sha256(grid.encode("utf-8")).hexdigest()
     manifest = {
         "datasetVersion": dataset_version,
@@ -108,6 +108,7 @@ def serving_fixture(tmp_path_factory):
         folds=4,
         inner_folds=2,
         min_rows=20,
+        min_dry_holes=1,
         min_spatial_blocks=4,
         seed=13,
     ))

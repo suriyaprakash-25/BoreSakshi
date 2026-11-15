@@ -19,7 +19,8 @@ class ScientificEvaluationConfig:
     folds: int = 5
     inner_folds: int = 3
     interval_coverage: float = 0.90
-    min_rows: int = 30
+    min_rows: int = 300
+    min_dry_holes: int = 60
     min_spatial_blocks: int = 5
     calibration_bins: int = 10
     seed: int = 42
@@ -117,6 +118,7 @@ def evaluate_scientifically(
             inner_folds=config.inner_folds,
             interval_coverage=config.interval_coverage,
             min_rows=config.min_rows,
+            min_dry_holes=config.min_dry_holes,
             min_spatial_blocks=config.min_spatial_blocks,
             calibration_bins=config.calibration_bins,
             seed=config.seed,
@@ -154,10 +156,10 @@ def evaluate_scientifically(
     manifest_path = root / "evaluation-manifest.json"
     report_path = root / "evaluation-report.md"
     checksum_path = root / "evaluation-manifest.sha256"
-    manifest_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    report_path.write_text(_render_markdown(report), encoding="utf-8")
+    manifest_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+    report_path.write_text(_render_markdown(report), encoding="utf-8", newline="\n")
     manifest_sha = _sha256_file(manifest_path)
-    checksum_path.write_text(f"{manifest_sha}  {manifest_path.name}\n", encoding="utf-8")
+    checksum_path.write_text(f"{manifest_sha}  {manifest_path.name}\n", encoding="utf-8", newline="\n")
     report["artifacts"] = {
         "manifest": {"path": manifest_path.name, "sha256": manifest_sha, "byteSize": manifest_path.stat().st_size},
         "humanReport": {"path": report_path.name, "sha256": _sha256_file(report_path), "byteSize": report_path.stat().st_size},

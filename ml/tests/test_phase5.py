@@ -76,6 +76,7 @@ def scientific_config(tmp_path: Path, evaluation_id: str, **overrides):
         "folds": 5,
         "inner_folds": 3,
         "min_rows": 30,
+        "min_dry_holes": 1,
         "min_spatial_blocks": 5,
         "bootstrap_iterations": 80,
         "confidence_level": 0.95,

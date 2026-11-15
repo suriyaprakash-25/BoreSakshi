@@ -8,6 +8,44 @@ import {
 import toast from "react-hot-toast";
 import { placeLabel, fmtDate } from "../metrics.js";
 import { rigEvidenceUrl } from "../api.js";
+import { useI18n } from "../i18n.jsx";
+
+function FollowUpForm({ log, onSave, busy }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [observedOn, setObservedOn] = useState(new Date().toISOString().slice(0, 10));
+  const [stillYielding, setStillYielding] = useState(null);
+  const [yieldLpm, setYieldLpm] = useState("");
+  const count = log.followUps?.length || 0;
+
+  async function save() {
+    if (stillYielding === null) return toast.error(t("follow.pickOne"));
+    await onSave({ observedOn, stillYielding, yieldLpm: yieldLpm === "" ? null : Number(yieldLpm) });
+    setOpen(false);
+    setStillYielding(null);
+    setYieldLpm("");
+  }
+
+  if (!open) {
+    return (
+      <div className="follow-up">
+        {count > 0 && <small>{t("follow.count", { count })}</small>}
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}>{t("follow.button")}</button>
+      </div>
+    );
+  }
+  return (
+    <div className="follow-up follow-up-open">
+      <label>{t("follow.date")} <input className="op-input" type="date" value={observedOn} onChange={(e) => setObservedOn(e.target.value)} /></label>
+      <div className="op-chips">
+        <button type="button" className={`op-chip ${stillYielding === true ? "active" : ""}`} onClick={() => setStillYielding(true)}>{t("follow.still")}</button>
+        <button type="button" className={`op-chip ${stillYielding === false ? "active" : ""}`} onClick={() => setStillYielding(false)}>{t("follow.dry")}</button>
+      </div>
+      <input className="op-input" type="number" min="0" inputMode="decimal" value={yieldLpm} placeholder={t("follow.yield")} onChange={(e) => setYieldLpm(e.target.value)} />
+      <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{t("follow.save")}</button>
+    </div>
+  );
+}
 
 function statusMeta(log) {
   const status = log.verificationStatus || (log.verified ? "VERIFIED" : "SUBMITTED");
@@ -18,6 +56,7 @@ function statusMeta(log) {
 }
 
 export default function LogItem({ log, showOperator = false, adminActions = null, operatorActions = null }) {
+  const { t } = useI18n();
   const [flagging, setFlagging] = useState(false);
   const [reason, setReason] = useState("");
   const [appealing, setAppealing] = useState(false);
@@ -117,6 +156,10 @@ export default function LogItem({ log, showOperator = false, adminActions = null
           <Flag size={13} strokeWidth={2.2} /> {log.flagReason}
           {log.flaggedBy ? <span className="log-flag-by"> — flagged by {log.flaggedBy}</span> : null}
         </div>
+      )}
+
+      {operatorActions?.addFollowUp && (
+        <FollowUpForm log={log} busy={busy} onSave={(payload) => run(() => operatorActions.addFollowUp(log.id, payload), t("follow.saved"))} />
       )}
 
       {operatorActions && log.verificationStatus === "REJECTED" && (

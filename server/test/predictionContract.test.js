@@ -50,17 +50,17 @@ test("Phase 7 rejects impossible depth/yield ranges", () => {
   assert.throws(() => assertMlPredictionContract(payload), /0 <= min <= estimate <= max/);
 });
 
-test("malformed ML service response becomes explicit heuristic fallback", async () => {
+test("malformed ML service response becomes an honest no-estimate", async () => {
   const malformed = validMlPrediction();
   malformed.featureSnapshot.featureManifestSha256 = "not-a-checksum";
   const result = await predictBorewell({
-    lat: 11,
-    lng: 77,
+    lat: 11.36,
+    lng: 77.8,
     nearbyLogs: [],
     client: { predict: async () => malformed },
   });
-  assert.equal(result.predictionSource, "heuristic_fallback");
-  assert.equal(result.isMock, true);
+  assert.equal(result.predictionSource, "no_estimate");
+  assert.equal(result.noEstimateReason, "MODEL_UNAVAILABLE");
+  assert.equal(result.successProbability, null);
   assert.equal(result.modelVersion, null);
-  assert.match(result.fallbackReason, /ML_CONTRACT_INVALID/);
 });

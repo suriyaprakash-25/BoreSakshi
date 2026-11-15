@@ -1,11 +1,13 @@
-// PredictionPanel.jsx — farmer prediction result card.
+// PredictionPanel.jsx — farmer result card: a trained-model estimate, or an honest
+// "no estimate" with the verified wells nearby. It never shows a guessed number.
 import { useState } from "react";
 import {
   Droplets, DropletOff, AlertTriangle, Loader2, Ruler, Waves, Layers, MapPin,
-  ChevronDown, Info, Clock, Send, Sparkles, TrendingUp, TrendingDown, Minus,
+  ChevronDown, Info, Clock, TrendingUp, TrendingDown, Minus, WifiOff, Hash,
 } from "lucide-react";
 import ProbabilityRing from "./ProbabilityRing.jsx";
-import { averageDepth, fmtDate } from "../metrics.js";
+import { fmtDate } from "../metrics.js";
+import { useI18n } from "../i18n.jsx";
 
 function Stat({ icon, label, value, sub }) {
   return (
@@ -25,72 +27,70 @@ const confidenceStyle = {
   High: { bg: "rgba(22,185,138,.14)", fg: "var(--mint)" },
 };
 
-function FactorBars({ factors, isMock }) {
+function FactorBars({ factors }) {
+  const { t } = useI18n();
   const max = Math.max(1, ...factors.map((f) => Math.abs(f.impact)));
   return (
     <div className="factors">
       {factors.map((f) => {
         const pos = f.impact > 0, neg = f.impact < 0;
-        const cls = f.base ? "base" : pos ? "pos" : neg ? "neg" : "zero";
+        const cls = pos ? "pos" : neg ? "neg" : "zero";
         const width = `${Math.round((Math.abs(f.impact) / max) * 100)}%`;
         return (
           <div className={`factor factor-${cls}`} key={`${f.label}-${f.method || "factor"}`}>
             <div className="factor-top">
               <span className="factor-label">{f.label}</span>
               <span className="factor-impact">
-                {f.base ? null : pos ? <TrendingUp size={13} strokeWidth={2.4} />
+                {pos ? <TrendingUp size={13} strokeWidth={2.4} />
                   : neg ? <TrendingDown size={13} strokeWidth={2.4} /> : <Minus size={13} strokeWidth={2.4} />}
-                {f.base ? f.impact : `${pos ? "+" : ""}${f.impact}`}
+                {`${pos ? "+" : ""}${f.impact}`}
               </span>
             </div>
             <div className="factor-track"><span className="factor-fill" style={{ width }} /></div>
           </div>
         );
       })}
-      <p className="factors-note">
-        {isMock
-          ? "Heuristic probability-point decomposition. This is the labelled fallback, not the trained ML model."
-          : "Local model sensitivity in probability points, estimated by single-feature ablation to the trained preprocessing baseline. Values are explanatory sensitivities and do not need to sum to the final probability."}
-      </p>
+      <p className="factors-note">{t("why.factorsNote")}</p>
     </div>
   );
 }
 
 function WhyConfidence({ reason }) {
+  const { t } = useI18n();
   const fresh = reason.latestNearbyLogAt ? fmtDate(reason.latestNearbyLogAt) : null;
   return (
     <div className="why-conf">
       <div className="why-conf-row">
         <MapPin size={14} strokeWidth={2.2} />
-        <span><strong>{reason.nearbyCount}</strong> verified well{reason.nearbyCount === 1 ? "" : "s"} within {reason.radiusKm} km
-          {reason.nearbyCount > 0 ? ` (${reason.successCount} success, ${reason.failCount} dry)` : ""}</span>
+        <span>{t("why.wells", { count: reason.nearbyCount, radius: reason.radiusKm, success: reason.successCount, dry: reason.failCount })}</span>
       </div>
       <div className="why-conf-row">
         <Clock size={14} strokeWidth={2.2} />
-        <span>Data freshness: {fresh ? <strong>{fresh}</strong> : "no nearby verified logs yet"}</span>
+        <span>{t("why.freshness")}: {fresh ? <strong>{fresh}</strong> : t("why.noFresh")}</span>
       </div>
       {reason.modelCoveragePct != null && (
         <div className="why-conf-row">
           <Info size={14} strokeWidth={2.2} />
-          <span>Feature coverage: <strong>{reason.modelCoveragePct}%</strong></span>
+          <span>{t("why.coverage")}: <strong>{reason.modelCoveragePct}%</strong></span>
         </div>
       )}
       {reason.normalizedEntropy != null && (
         <div className="why-conf-row">
           <Info size={14} strokeWidth={2.2} />
-          <span>Probability uncertainty (normalized entropy): <strong>{Number(reason.normalizedEntropy).toFixed(2)}</strong></span>
+          <span>{t("why.uncertainty")}: <strong>{Number(reason.normalizedEntropy).toFixed(2)}</strong></span>
         </div>
       )}
-      <p className="why-conf-note">Confidence combines calibrated model certainty, feature coverage, and verified local evidence. It is not a guarantee of groundwater.</p>
+      <p className="why-conf-note">{t("why.note")}</p>
     </div>
   );
 }
 
 function NearbyExplorer({ nearby }) {
+  const { t } = useI18n();
   if (!nearby?.length) {
     return (
       <div className="nearby-empty">
-        <Info size={15} strokeWidth={2.2} /> No verified wells within 5 km yet.
+        <Info size={15} strokeWidth={2.2} /> {t("nearby.empty")}
       </div>
     );
   }
@@ -102,60 +102,36 @@ function NearbyExplorer({ nearby }) {
             {w.success ? <Droplets size={13} strokeWidth={2.2} /> : <DropletOff size={13} strokeWidth={2.2} />}
           </span>
           <span className="nearby-main">
-            <span className="nearby-place">{w.placeName || "Unnamed site"}</span>
+            <span className="nearby-place">{t("nearby.site")}</span>
             <span className="nearby-meta">
-              {w.depthFt != null ? `${w.depthFt} ft` : "depth n/a"}
-              {w.strata ? ` · ${w.strata}` : ""} · {w.success ? "water found" : "dry hole"}
+              {w.depthFt != null ? `${w.depthFt} ft` : t("nearby.depthNa")}
+              {w.strata ? ` · ${w.strata}` : ""} · {t(w.success ? "nearby.water" : "nearby.dry")}
             </span>
           </span>
-          <span className="nearby-dist">{w.distanceKm} km</span>
+          <span className="nearby-dist">{t("nearby.about", { km: w.distanceKm })}</span>
         </li>
       ))}
     </ul>
   );
 }
 
-function askAnswer(data) {
-  const r = data.confidenceReason || {};
-  const n = r.nearbyCount ?? (data.nearby?.length || 0);
-  const avg = averageDepth(data.nearby || []);
+function resultSummary(data, t) {
+  const reason = data.confidenceReason || {};
+  const count = reason.nearbyCount ?? 0;
   const prob = data.successProbability;
-  const verdict =
-    prob >= 65 ? "Conditions look favourable, but drilling is still uncertain."
-    : prob >= 45 ? "It's borderline — consider a hydrogeological second opinion or nearby alternatives."
-    : "The estimated odds are low here — compare nearby locations before drilling.";
-  const evidence = n
-    ? `There ${n === 1 ? "is" : "are"} ${n} verified well${n === 1 ? "" : "s"} within ${r.radiusKm || 5} km (${r.successCount} successful, ${r.failCount} dry)${avg != null ? `, averaging ${avg} ft deep` : ""}.`
-    : "There are no verified wells nearby yet.";
-  const source = data.predictionSource === "ml" ? `This is trained-model output (${data.modelVersion}).` : "The trained model is unavailable, so this is the labelled heuristic fallback.";
-  return `${source} ${evidence} Likely strata/context is ${String(data.rockType || "unknown").toLowerCase()}. Estimated success here is ${prob}% (${data.confidence.toLowerCase()} confidence). ${verdict}`;
+  const verdict = prob >= 65 ? t("result.summaryFavourable") : prob >= 45 ? t("result.summaryBorderline") : t("result.summaryLow");
+  const evidence = count
+    ? t("result.summaryEvidence", { count, radius: reason.radiusKm || 5, success: reason.successCount, dry: reason.failCount })
+    : t("result.summaryEvidenceNone");
+  return `${t("result.summaryEstimate", { prob })} ${evidence} ${verdict}`;
 }
 
-function AskBoreSakshi({ data }) {
-  const [q, setQ] = useState("");
-  const [answer, setAnswer] = useState("");
-  function handleAsk(e) {
-    e.preventDefault();
-    setAnswer(askAnswer(data));
-  }
-  return (
-    <form className="ask" onSubmit={handleAsk}>
-      <label className="ask-label"><Sparkles size={14} strokeWidth={2.2} /> Ask BoreSakshi</label>
-      <div className="ask-row">
-        <input
-          className="op-input ask-input"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Should I drill here?"
-          aria-label="Ask about this location"
-        />
-        <button className="btn btn-primary ask-send" type="submit" aria-label="Ask">
-          <Send size={16} strokeWidth={2.2} />
-        </button>
-      </div>
-      {answer && <div className="ask-answer">{answer}</div>}
-    </form>
-  );
+// A plain restatement of the numbers above. It is not an AI assistant.
+function ResultSummary({ data }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  if (open) return <div className="ask-answer">{resultSummary(data, t)}</div>;
+  return <button type="button" className="btn btn-ghost btn-block" onClick={() => setOpen(true)}>{t("result.summaryButton")}</button>;
 }
 
 function Disclosure({ icon, title, defaultOpen = false, children }) {
@@ -172,29 +148,79 @@ function Disclosure({ icon, title, defaultOpen = false, children }) {
 }
 
 function ModelDetails({ data }) {
+  const { t } = useI18n();
   const depth = data.uncertainty?.depth;
   const yieldUncertainty = data.uncertainty?.yield;
   return (
     <div className="why-conf">
-      <div className="why-conf-row"><Info size={14} /><span>Source: <strong>{data.predictionSource === "ml" ? "trained ML" : "heuristic fallback"}</strong></span></div>
-      {data.modelVersion && <div className="why-conf-row"><Info size={14} /><span>Model: <strong>{data.modelVersion}</strong></span></div>}
-      {data.featureVersion && <div className="why-conf-row"><Info size={14} /><span>Features: <strong>{data.featureVersion}</strong></span></div>}
-      {data.predictionTimestamp && <div className="why-conf-row"><Clock size={14} /><span>Predicted: <strong>{fmtDate(data.predictionTimestamp)}</strong></span></div>}
-      {depth?.radiusFt != null && <div className="why-conf-row"><Ruler size={14} /><span>Depth interval radius: <strong>±{Math.round(depth.radiusFt)} ft</strong> ({Math.round((depth.targetCoverage || 0) * 100)}% target coverage)</span></div>}
-      {yieldUncertainty?.radiusLpm != null && <div className="why-conf-row"><Waves size={14} /><span>Yield interval radius: <strong>±{Math.round(yieldUncertainty.radiusLpm)} LPM</strong> ({Math.round((yieldUncertainty.targetCoverage || 0) * 100)}% target coverage)</span></div>}
+      <div className="why-conf-row"><Info size={14} /><span>{t("why.source")}: <strong>{t("why.sourceMl")}</strong></span></div>
+      {data.modelVersion && <div className="why-conf-row"><Info size={14} /><span>{t("why.modelVersion")}: <strong>{data.modelVersion}</strong></span></div>}
+      {data.featureVersion && <div className="why-conf-row"><Info size={14} /><span>{t("why.features")}: <strong>{data.featureVersion}</strong></span></div>}
+      {data.predictionTimestamp && <div className="why-conf-row"><Clock size={14} /><span>{t("why.predicted")}: <strong>{fmtDate(data.predictionTimestamp)}</strong></span></div>}
+      {depth?.radiusFt != null && <div className="why-conf-row"><Ruler size={14} /><span>{t("why.depthRange")}: <strong>±{Math.round(depth.radiusFt)} ft</strong> ({Math.round((depth.targetCoverage || 0) * 100)}% {t("why.targetCoverage")})</span></div>}
+      {yieldUncertainty?.radiusLpm != null && <div className="why-conf-row"><Waves size={14} /><span>{t("why.yieldRange")}: <strong>±{Math.round(yieldUncertainty.radiusLpm)} LPM</strong> ({Math.round((yieldUncertainty.targetCoverage || 0) * 100)}% {t("why.targetCoverage")})</span></div>}
+    </div>
+  );
+}
+
+function Advisory() {
+  const { t } = useI18n();
+  return <div className="advisory"><strong>{t("advisory.title")}</strong> {t("advisory.body")}</div>;
+}
+
+function NearbySection({ nearby }) {
+  const { t } = useI18n();
+  const count = nearby?.length || 0;
+  return (
+    <Disclosure icon={<MapPin size={15} strokeWidth={2.2} />} title={t("nearby.title", { count })} defaultOpen={count > 0}>
+      <NearbyExplorer nearby={nearby} />
+    </Disclosure>
+  );
+}
+
+function PredictionCode({ id }) {
+  const { t } = useI18n();
+  if (!id) return null;
+  return (
+    <div className="prediction-code">
+      <Hash size={15} strokeWidth={2.2} />
+      <span>{t("result.code")}: <strong>{id}</strong></span>
+      <small>{t("result.codeHelp")}</small>
+    </div>
+  );
+}
+
+function NoEstimate({ data, coords }) {
+  const { t } = useI18n();
+  return (
+    <div className="panel panel-result">
+      <div className="result-head">
+        <div className="empty-badge empty-badge-warn"><Info size={28} strokeWidth={2} /></div>
+        <div className="result-head-text">
+          <div className="result-title">{t("none.title")}</div>
+          <div className="result-coords">{coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}</div>
+        </div>
+      </div>
+      <div className="basis">{t(`none.${data.noEstimateReason}`)}</div>
+      <div className="basis">{t("none.next")}</div>
+      <PredictionCode id={data.predictionId} />
+      <NearbySection nearby={data.nearby} />
+      <Advisory />
     </div>
   );
 }
 
 export default function PredictionPanel({ status, data, coords, onPinCurrentLocation }) {
+  const { t } = useI18n();
+
   if (status === "idle") {
     return (
       <div className="panel panel-empty">
         <div className="empty-badge"><Droplets size={30} strokeWidth={2} /></div>
-        <h2>Know before you drill</h2>
-        <p>Tap anywhere on the map to check the groundwater outlook for that spot — success odds, likely depth and expected yield.</p>
-        <button className="btn btn-primary" onClick={onPinCurrentLocation} style={{ marginTop: '1.5rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-          <MapPin size={18} /> Pin current location
+        <h2>{t("panel.idleTitle")}</h2>
+        <p>{t("panel.idleBody")}</p>
+        <button className="btn btn-primary" onClick={onPinCurrentLocation} style={{ marginTop: "1.5rem", display: "inline-flex", alignItems: "center", gap: "8px" }}>
+          <MapPin size={18} /> {t("panel.pin")}
         </button>
       </div>
     );
@@ -204,77 +230,74 @@ export default function PredictionPanel({ status, data, coords, onPinCurrentLoca
     return (
       <div className="panel panel-loading">
         <Loader2 className="spin" size={34} strokeWidth={2.4} />
-        <p>Reading geology, satellite signals &amp; nearby verified wells…</p>
+        <p>{t("panel.loading")}</p>
       </div>
     );
   }
 
-  if (status === "error") {
+  if (status === "offline" || status === "error") {
+    const offline = status === "offline";
     return (
       <div className="panel panel-empty">
-        <div className="empty-badge empty-badge-warn"><AlertTriangle size={28} strokeWidth={2} /></div>
-        <h2>Couldn't reach the server</h2>
-        <p>Make sure the BoreSakshi API is running on <code>localhost:4000</code>, then tap the map again.</p>
+        <div className="empty-badge empty-badge-warn">
+          {offline ? <WifiOff size={28} strokeWidth={2} /> : <AlertTriangle size={28} strokeWidth={2} />}
+        </div>
+        <h2>{t(offline ? "panel.offlineTitle" : "panel.errorTitle")}</h2>
+        <p>{t(offline ? "panel.offlineBody" : "panel.errorBody")}</p>
       </div>
     );
   }
 
+  if (data.estimateAvailable === false) return <NoEstimate data={data} coords={coords} />;
+
   const conf = confidenceStyle[data.confidence] || confidenceStyle.Low;
-  const fallback = data.predictionSource === "heuristic_fallback" || data.isMock;
 
   return (
     <div className="panel panel-result">
-      {fallback && (
-        <div className="advisory">
-          <strong>Trained model unavailable.</strong> This result is the explicitly labelled heuristic fallback, not an ML prediction.
-        </div>
-      )}
-      {data.coverageWarning && !fallback && (
-        <div className="advisory"><strong>Coverage warning.</strong> {data.coverageWarning}</div>
+      {data.coverageWarning && (
+        <div className="advisory"><strong>{t("result.coverage")}</strong> {data.coverageWarning}</div>
       )}
 
       <div className="result-head">
         <ProbabilityRing value={data.successProbability} />
         <div className="result-head-text">
-          <div className="result-title">Drilling outlook</div>
+          <div className="result-title">{t("result.title")}</div>
           <div className="result-coords">{coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}</div>
-          <span className="chip" style={{ background: conf.bg, color: conf.fg }}>{data.confidence} confidence</span>
+          <span className="chip" style={{ background: conf.bg, color: conf.fg }}>{t(`result.confidence.${data.confidence}`)}</span>
         </div>
       </div>
 
       <div className="stats">
-        <Stat icon={<Ruler size={18} strokeWidth={2.2} />} label="Expected depth" value={`${data.depthBandFt[0]}–${data.depthBandFt[1]} ft`} />
-        <Stat icon={<Waves size={18} strokeWidth={2.2} />} label="Expected yield" value={`${data.expectedYieldLpm[0]}–${data.expectedYieldLpm[1]} LPM`} />
-        <Stat icon={<Layers size={18} strokeWidth={2.2} />} label="Likely strata" value={data.rockType} />
-        <Stat icon={<MapPin size={18} strokeWidth={2.2} />} label="Verified wells nearby" value={data.nearbyVerifiedLogs} sub="within 5 km" />
+        <Stat icon={<Ruler size={18} strokeWidth={2.2} />} label={t("result.depth")} value={`${data.depthBandFt[0]}–${data.depthBandFt[1]} ft`} />
+        <Stat icon={<Waves size={18} strokeWidth={2.2} />} label={t("result.yield")} value={`${data.expectedYieldLpm[0]}–${data.expectedYieldLpm[1]} LPM`} />
+        <Stat icon={<Layers size={18} strokeWidth={2.2} />} label={t("result.strata")} value={data.rockType} />
+        <Stat icon={<MapPin size={18} strokeWidth={2.2} />} label={t("result.nearby")} value={data.nearbyVerifiedLogs} sub={t("result.within")} />
       </div>
 
       <div className="basis">{data.basis}</div>
-      <AskBoreSakshi data={data} />
+
+      <PredictionCode id={data.predictionId} />
+
+      <ResultSummary data={data} />
 
       {data.factors?.length > 0 && (
-        <Disclosure icon={<Info size={15} strokeWidth={2.2} />} title="Why this prediction?" defaultOpen>
-          <FactorBars factors={data.factors} isMock={fallback} />
+        <Disclosure icon={<Info size={15} strokeWidth={2.2} />} title={t("why.prediction")} defaultOpen>
+          <FactorBars factors={data.factors} />
         </Disclosure>
       )}
 
       {data.confidenceReason && (
-        <Disclosure icon={<Info size={15} strokeWidth={2.2} />} title="Why this confidence?">
+        <Disclosure icon={<Info size={15} strokeWidth={2.2} />} title={t("why.confidence")}>
           <WhyConfidence reason={data.confidenceReason} />
         </Disclosure>
       )}
 
-      <Disclosure icon={<Info size={15} strokeWidth={2.2} />} title="Model & uncertainty">
+      <Disclosure icon={<Info size={15} strokeWidth={2.2} />} title={t("why.model")}>
         <ModelDetails data={data} />
       </Disclosure>
 
-      <Disclosure icon={<MapPin size={15} strokeWidth={2.2} />} title={`Nearby verified wells (${data.nearby?.length || 0})`} defaultOpen={(data.nearby?.length || 0) > 0}>
-        <NearbyExplorer nearby={data.nearby} />
-      </Disclosure>
-
-      <div className="advisory">
-        <strong>Advisory, not a guarantee.</strong> Groundwater is uncertain even with validated models. Use this result together with local hydrogeological expertise before spending on drilling.
-      </div>
+      <NearbySection nearby={data.nearby} />
+      <Advisory />
     </div>
   );
 }

@@ -33,7 +33,7 @@ Phase 7 versioned prediction-contract validation
 Node contract validation + Phase 11 accountability snapshot
 ```
 
-Every accepted ML prediction carries a model version, feature version, prediction timestamp, uncertainty, explanations, coverage metadata and an immutable `featureSnapshotRef`. If the Python service is unavailable or returns an invalid/insufficient-coverage response, Node returns the deterministic heuristic **only as an explicitly labelled `heuristic_fallback`**. It is never presented as ML.
+Every accepted ML prediction carries a model version, feature version, prediction timestamp, uncertainty, explanations, coverage metadata and an immutable `featureSnapshotRef`. If the Python service is unavailable or returns an invalid/insufficient-coverage response, Node returns an honest "no estimate" with the verified wells nearby. No guessed number is shown or stored.
 
 ## Rig-operator verification path
 
@@ -110,7 +110,7 @@ regional + model-version + source performance
 Phase 10 monitoring input
 ```
 
-Phase 11 preserves real ML model versions separately from `heuristic_fallback`. If outcome trust is later reopened or removed, that outcome is removed from current performance metrics and the reopening is retained in append-only accountability history.
+Phase 11 keeps each ML model version separate, and public accuracy counts the trained model only. If outcome trust is later reopened or removed, that outcome is removed from current performance metrics and the reopening is retained in append-only accountability history.
 
 ## Production security and reliability
 
@@ -146,7 +146,7 @@ complete Python ML regression/leakage/inference suite
               Phase 17 release gate
 ```
 
-The real-Mongo E2E covers operator registration/login, admin operator verification, farmer prediction persistence, explicit fallback behavior when ML is unavailable, rig evidence upload, structured drilling submission, Phase 9 verification, Phase 11 accountability scoring, public privacy projection and outcome reopening/audit retention.
+The real-Mongo E2E covers operator registration/login, admin operator verification, farmer prediction persistence, no-estimate behaviour outside the pilot area, rig evidence upload, structured drilling submission, Phase 9 verification, Phase 11 accountability scoring, public privacy projection and outcome reopening/audit retention.
 
 Verified Phase 17 runtime-head results: 77 active backend tests passed with two intentional skips in the generic suite, the separate Mongo lifecycle passed, 5 frontend tests passed, the production frontend build/preview passed, 29 ML tests passed, and production server/web dependency audits passed with zero production vulnerabilities. See `docs/phase-17-full-testing.md` and `docs/phase-17-completion-report.md` for the exact scope and boundaries.
 
@@ -253,7 +253,7 @@ Signup displays a recovery code once. Save it securely; only its hash is stored 
 - [x] Phase 3 — real geospatial feature-engineering pipeline
 - [x] Phase 4 — real-model candidate training/registry
 - [x] Phase 5 — spatial scientific evaluation/calibration/uncertainty/selection
-- [x] Phase 6 — Python ML service + Node orchestration with explicit fallback controls
+- [x] Phase 6 — Python ML service + Node orchestration
 - [x] Phase 7 — real prediction-engine contract, immutable feature snapshots and activation preflight
 - [x] Phase 8 — authenticated structured rig-operator data collection + evidence + untrusted-by-default gate
 - [x] Phase 9 — formal verification lifecycle + suspicious-data review + operator/data trust + append-only audit

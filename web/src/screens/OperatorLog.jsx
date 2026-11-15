@@ -11,6 +11,9 @@ import AppHeader from "../components/AppHeader.jsx";
 import { useAuth } from "../auth.jsx";
 import { useOperatorData } from "../operatorData.jsx";
 import { deleteRigEvidence, logBorewell, uploadRigEvidence } from "../api.js";
+import { isNetworkError } from "../offlineQueue.js";
+import { useI18n } from "../i18n.jsx";
+import OfflineQueuePanel from "../components/OfflineQueuePanel.jsx";
 
 const SpeechRecognition =
   typeof window !== "undefined" &&
@@ -31,14 +34,20 @@ const TODAY = new Date().toISOString().slice(0, 10);
 
 const EMPTY = {
   lat: "", lng: "", placeName: "", drillingDate: TODAY,
-  depthFt: "", waterStrikeFt: "", yieldLpm: "",
+  depthFt: "", waterStrikeFt: "", yieldLpm: "", predictionId: "",
+  depthToHardRockFt: "", stopReason: "", yieldMethod: "", siteChosenBy: "",
 };
+
+const STOP_REASONS = ["water_found", "budget", "rock_too_hard", "equipment", "gave_up_no_water", "other"];
+const YIELD_METHODS = ["timed_container", "flow_meter", "airlift_estimate", "visual_estimate", "not_measured"];
+const SITE_METHODS = ["diviner", "geophysical_survey", "near_working_well", "farmer_choice", "boresakshi", "other"];
 
 const emptyLayer = (fromFt = "0") => ({ fromFt, toFt: "", material: "", notes: "" });
 
 export default function OperatorLog() {
   const { operator, signOut } = useAuth();
-  const { addLog } = useOperatorData();
+  const { addLog, queueLog } = useOperatorData();
+  const { t, lang: uiLang } = useI18n();
   const location = useLocation();
   const site = location.state?.site || null;
 
@@ -46,9 +55,10 @@ export default function OperatorLog() {
     site ? { ...EMPTY, lat: String(site.lat), lng: String(site.lng), placeName: site.village || "" } : EMPTY
   );
   const [success, setSuccess] = useState(null);
-  const [lang, setLang] = useState("ta");
+  const [lang, setLang] = useState(uiLang);
   const [gps, setGps] = useState({ status: "idle", accuracy: null, capturedAt: null });
   const [layers, setLayers] = useState([emptyLayer()]);
+  const [extraStrikes, setExtraStrikes] = useState([]);
   const [evidence, setEvidence] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -124,13 +134,18 @@ export default function OperatorLog() {
       for (const file of selected) {
         const isPhoto = file.type.startsWith("image/");
         const isVideo = file.type.startsWith("video/");
-        if (!isPhoto && !isVideo) throw new Error(`${file.name}: only photos/videos are supported`);
+        if (!isPhoto && !isVideo) throw new Error(t("log.err.fileType"));
         const currentPhotos = evidence.filter((item) => item.kind === "photo").length;
         const currentVideos = evidence.filter((item) => item.kind === "video").length;
-        if (isPhoto && currentPhotos >= 8) throw new Error("Maximum 8 photos per drill log");
-        if (isVideo && currentVideos >= 2) throw new Error("Maximum 2 videos per drill log");
-        const uploaded = await uploadRigEvidence(file);
-        setEvidence((current) => [...current, uploaded]);
+        if (isPhoto && currentPhotos >= 8) throw new Error(t("log.err.maxPhotos"));
+        if (isVideo && currentVideos >= 2) throw new Error(t("log.err.maxVideos"));
+        try {
+          const uploaded = navigator.onLine ? await uploadRigEvidence(file) : keepOnPhone(file);
+          setEvidence((current) => [...current, uploaded]);
+        } catch (err) {
+          if (!isNetworkError(err)) throw err;
+          setEvidence((current) => [...current, keepOnPhone(file)]);
+        }
       }
     } catch (err) {
       if (err.status === 401) { signOut(); return; }
@@ -140,8 +155,22 @@ export default function OperatorLog() {
     }
   }
 
+  function keepOnPhone(file) {
+    return {
+      id: crypto.randomUUID(),
+      kind: file.type.startsWith("image/") ? "photo" : "video",
+      originalName: file.name,
+      byteSize: file.size,
+      file,
+    };
+  }
+
   async function removeEvidence(item) {
     setError("");
+    if (item.file) {
+      setEvidence((current) => current.filter((entry) => entry.id !== item.id));
+      return;
+    }
     try {
       await deleteRigEvidence(item);
       setEvidence((current) => current.filter((entry) => entry.id !== item.id));
@@ -154,27 +183,27 @@ export default function OperatorLog() {
     const lat = Number(form.lat);
     const lng = Number(form.lng);
     const depth = Number(form.depthFt);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return "Location is required.";
-    if (gps.status !== "ok" || gps.accuracy == null || !gps.capturedAt) return "Capture device GPS before submitting so GPS accuracy is recorded.";
-    if (!form.drillingDate) return "Enter the drilling date.";
-    if (success === null) return "Tap ‘Water found’ or ‘Dry hole’.";
-    if (!(depth > 0)) return "Enter the total drilled depth.";
-    if (success && !(Number(form.waterStrikeFt) > 0)) return "Enter the water-strike depth.";
-    if (success && Number(form.waterStrikeFt) > depth) return "Water-strike depth cannot exceed total depth.";
-    if (success && !(Number(form.yieldLpm) > 0)) return "Enter the measured yield.";
-    if (layers.length === 0) return "Add at least one geological layer.";
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return t("log.err.location");
+    if (gps.status !== "ok" || gps.accuracy == null || !gps.capturedAt) return t("log.err.gps");
+    if (!form.drillingDate) return t("log.err.date");
+    if (success === null) return t("log.err.outcome");
+    if (!(depth > 0)) return t("log.err.depth");
+    if (success && !(Number(form.waterStrikeFt) > 0)) return t("log.err.strike");
+    if (success && Number(form.waterStrikeFt) > depth) return t("log.err.strikeDeep");
+    if (success && !(Number(form.yieldLpm) > 0)) return t("log.err.yield");
+    if (layers.length === 0) return t("log.err.layerIncomplete", { n: 1 });
     let previousTo = 0;
     for (let i = 0; i < layers.length; i += 1) {
       const layer = layers[i];
       const from = Number(layer.fromFt);
       const to = Number(layer.toFt);
-      if (!layer.material.trim() || !Number.isFinite(from) || !Number.isFinite(to)) return `Complete geological layer ${i + 1}.`;
-      if (to <= from) return `Layer ${i + 1}: end depth must be greater than start depth.`;
-      if (to > depth) return `Layer ${i + 1} extends below total drilled depth.`;
-      if (i > 0 && from < previousTo) return `Layer ${i + 1} overlaps the previous layer.`;
+      if (!layer.material.trim() || !Number.isFinite(from) || !Number.isFinite(to)) return t("log.err.layerIncomplete", { n: i + 1 });
+      if (to <= from) return t("log.err.layerOrder", { n: i + 1 });
+      if (to > depth) return t("log.err.layerDeep", { n: i + 1 });
+      if (i > 0 && from < previousTo) return t("log.err.layerOverlap", { n: i + 1 });
       previousTo = to;
     }
-    if (!evidence.some((item) => item.kind === "photo")) return "Upload at least one drilling-site photo.";
+    if (!evidence.some((item) => item.kind === "photo")) return t("log.err.photo");
     return null;
   }
 
@@ -202,17 +231,40 @@ export default function OperatorLog() {
       waterStrikeFt: success ? Number(form.waterStrikeFt) : 0,
       yieldLpm: success ? Number(form.yieldLpm) : 0,
       success,
-      evidenceTokens: evidence.map((item) => item.token),
       language: lang,
+      ...(form.predictionId.trim() ? { predictionId: form.predictionId.trim() } : {}),
+      waterStrikes: [
+        ...(success ? [{ depthFt: Number(form.waterStrikeFt), flowLpm: Number(form.yieldLpm) }] : []),
+        ...extraStrikes.filter((strike) => Number(strike.depthFt) > 0).map((strike) => ({
+          depthFt: Number(strike.depthFt),
+          flowLpm: strike.flowLpm === "" ? null : Number(strike.flowLpm),
+        })),
+      ],
+      ...(form.stopReason ? { stopReason: form.stopReason } : {}),
+      ...(form.yieldMethod ? { yieldMethod: form.yieldMethod } : {}),
+      ...(form.siteChosenBy ? { siteChosenBy: form.siteChosenBy } : {}),
+      ...(form.depthToHardRockFt !== "" ? { depthToHardRockFt: Number(form.depthToHardRockFt) } : {}),
+    };
+    const tokens = evidence.filter((item) => item.token).map((item) => item.token);
+    const files = evidence.filter((item) => item.file).map((item) => item.file);
+    const saveOnPhone = async () => {
+      await queueLog({ payload, tokens, files });
+      setEvidence([]);
+      setDone({ ...payload, queued: true });
     };
 
     setSubmitting(true);
     try {
-      const record = await logBorewell(payload);
+      if (files.length || !navigator.onLine) {
+        await saveOnPhone();
+        return;
+      }
+      const record = await logBorewell({ ...payload, evidenceTokens: tokens });
       addLog(record);
       setDone(record);
       setEvidence([]); // tokens were consumed/bound by the server
     } catch (err) {
+      if (isNetworkError(err)) { await saveOnPhone(); return; }
       if (err.status === 401) { signOut(); return; }
       setError(err.message);
     } finally {
@@ -224,6 +276,7 @@ export default function OperatorLog() {
     setForm((f) => ({ ...EMPTY, lat: f.lat, lng: f.lng, placeName: "" }));
     setSuccess(null);
     setLayers([emptyLayer()]);
+    setExtraStrikes([]);
     setEvidence([]);
     setError("");
     setDone(null);
@@ -233,32 +286,32 @@ export default function OperatorLog() {
   if (done) {
     return (
       <div className="op">
-        <AppHeader subtitle="Rig operator · log outcome" />
+        <AppHeader subtitle={t("log.subtitle")} />
         <div className="op-body op-anim">
           <div className="op-done">
             <div className={`op-done-badge ${done.success ? "ok" : "dry"}`}>
               {done.success ? <Droplets size={34} strokeWidth={2} /> : <DropletOff size={32} strokeWidth={2} />}
             </div>
-            <h2>Drill log submitted</h2>
+            <h2>{t(done.queued ? "log.queuedTitle" : "log.doneTitle")}</h2>
             <p className="op-done-sub">
-              {done.success ? "Water found" : "Dry hole"} · {done.depthFt} ft · {done.drillingDate}
+              {t(done.success ? "legend.water" : "legend.dry")} · {done.depthFt} ft · {done.drillingDate}
             </p>
 
             <div className="op-ledger-note">
               <div className="op-ledger-icon"><ShieldCheck size={20} strokeWidth={2.2} /></div>
               <div>
-                <strong>Pending verification.</strong> This submission is stored with GPS accuracy,
-                structured geology and evidence. It will affect the public accountability ledger and
-                ML/training data only after verification.
+                {done.queued
+                  ? t("log.queuedBody")
+                  : <><strong>{t("log.pendingTitle")}</strong> {t("log.pendingBody")}</>}
               </div>
             </div>
 
             <div className="op-done-actions">
               <button className="btn btn-primary" onClick={resetForNext}>
-                <RotateCcw size={17} strokeWidth={2.2} /> Log another job
+                <RotateCcw size={17} strokeWidth={2.2} /> {t("log.another")}
               </button>
-              <Link to="/history" className="btn btn-ghost">View submission history</Link>
-              <Link to="/ledger" className="btn btn-ghost"><Scale size={17} strokeWidth={2.2} /> Public ledger</Link>
+              <Link to="/history" className="btn btn-ghost">{t("log.history")}</Link>
+              <Link to="/ledger" className="btn btn-ghost"><Scale size={17} strokeWidth={2.2} /> {t("log.ledger")}</Link>
             </div>
           </div>
         </div>
@@ -268,19 +321,20 @@ export default function OperatorLog() {
 
   return (
     <div className="op">
-      <AppHeader subtitle="Rig operator · structured drilling record" />
+      <AppHeader subtitle={t("log.subtitle")} />
       <form className="op-body op-anim" onSubmit={handleSubmit}>
         <p className="op-intro">
-          {operator ? <>Signed in as <strong>{operator.name}</strong>. </> : null}
-          Your authenticated account is the operator identity for this record. Submitted data stays
-          pending until verification.
+          {operator ? <>{t("log.signedAs", { name: operator.name })} </> : null}
+          {t("log.intro")}
         </p>
+
+        <OfflineQueuePanel />
 
         {site && <div className="op-ledger-note"><MapPin size={18} /> Assigned site: <strong>{site.village}</strong>. Capture device GPS at the actual drill point before submitting.</div>}
 
         {VOICE_SUPPORTED && (
           <div className="op-field">
-            <label className="op-label"><Mic size={15} strokeWidth={2.2} /> Voice language</label>
+            <label className="op-label"><Mic size={15} strokeWidth={2.2} /> {t("log.voice")}</label>
             <div className="op-chips">
               {Object.entries(LANGS).map(([k, v]) => (
                 <button type="button" key={k} className={`op-chip ${lang === k ? "active" : ""}`}
@@ -291,70 +345,70 @@ export default function OperatorLog() {
         )}
 
         <div className="op-field">
-          <label className="op-label"><MapPin size={15} strokeWidth={2.2} /> GPS drill location *</label>
+          <label className="op-label"><MapPin size={15} strokeWidth={2.2} /> {t("log.gps")}</label>
           <div className="op-gps">
             <button type="button" className="op-locate" onClick={captureLocation}>
-              <LocateFixed size={16} strokeWidth={2.2} /> {gps.status === "locating" ? "Locating…" : "Capture GPS"}
+              <LocateFixed size={16} strokeWidth={2.2} /> {t(gps.status === "locating" ? "log.locating" : "log.capture")}
             </button>
             <span className={`op-gps-status op-gps-${gps.status}`}>
-              {gps.status === "ok" && `Captured · ±${gps.accuracy} m`}
-              {gps.status === "error" && "GPS unavailable — retry with location enabled"}
-              {gps.status === "locating" && "Reading high-accuracy GPS…"}
-              {gps.status === "idle" && "Required"}
+              {gps.status === "ok" && t("log.gpsOk", { m: gps.accuracy })}
+              {gps.status === "error" && t("log.gpsError")}
+              {gps.status === "locating" && t("log.gpsReading")}
+              {gps.status === "idle" && t("log.required")}
             </span>
           </div>
           <div className="op-row">
-            <NumInput placeholder="Latitude" value={form.lat} onChange={(v) => set("lat", v)} step="any" readOnly />
-            <NumInput placeholder="Longitude" value={form.lng} onChange={(v) => set("lng", v)} step="any" readOnly />
+            <NumInput placeholder={t("log.lat")} value={form.lat} onChange={(v) => set("lat", v)} step="any" readOnly />
+            <NumInput placeholder={t("log.lng")} value={form.lng} onChange={(v) => set("lng", v)} step="any" readOnly />
           </div>
         </div>
 
         <div className="op-row">
           <div className="op-field">
-            <label className="op-label"><CalendarDays size={15} /> Drilling date *</label>
+            <label className="op-label"><CalendarDays size={15} /> {t("log.date")}</label>
             <input className="op-input" type="date" max={TODAY} value={form.drillingDate} onChange={(e) => set("drillingDate", e.target.value)} />
           </div>
-          <Field label="Village / area" labelIcon={MapPin} field="placeName" form={form} set={set}
-            listeningField={listeningField} dictate={dictate} placeholder="e.g. Pallipalayam" />
+          <Field label={t("log.village")} labelIcon={MapPin} field="placeName" form={form} set={set}
+            listeningField={listeningField} dictate={dictate} placeholder={t("log.villageEg")} />
         </div>
 
         <div className="op-field">
-          <label className="op-label"><Droplets size={15} strokeWidth={2.2} /> Outcome *</label>
+          <label className="op-label"><Droplets size={15} strokeWidth={2.2} /> {t("log.outcome")}</label>
           <div className="op-toggle">
             <button type="button" className={`op-toggle-btn ok ${success === true ? "active" : ""}`} onClick={() => setSuccess(true)}>
-              <Droplets size={19} strokeWidth={2.2} /> Water found
+              <Droplets size={19} strokeWidth={2.2} /> {t("legend.water")}
             </button>
             <button type="button" className={`op-toggle-btn dry ${success === false ? "active" : ""}`} onClick={() => setSuccess(false)}>
-              <DropletOff size={19} strokeWidth={2.2} /> Dry hole
+              <DropletOff size={19} strokeWidth={2.2} /> {t("legend.dry")}
             </button>
           </div>
         </div>
 
-        <Field label="Total depth (ft) *" labelIcon={Ruler} field="depthFt" form={form} set={set}
+        <Field label={t("log.depth")} labelIcon={Ruler} field="depthFt" form={form} set={set}
           numeric listeningField={listeningField} dictate={dictate} placeholder="e.g. 420" />
 
         {success !== false && (
           <div className="op-row">
-            <Field label="Water strike (ft) *" labelIcon={Droplets} field="waterStrikeFt" form={form} set={set}
+            <Field label={t("log.strike")} labelIcon={Droplets} field="waterStrikeFt" form={form} set={set}
               numeric listeningField={listeningField} dictate={dictate} placeholder="e.g. 280" />
-            <Field label="Measured yield (LPM) *" labelIcon={Waves} field="yieldLpm" form={form} set={set}
+            <Field label={t("log.yield")} labelIcon={Waves} field="yieldLpm" form={form} set={set}
               numeric listeningField={listeningField} dictate={dictate} placeholder="e.g. 45" />
           </div>
         )}
 
         <div className="op-field phase8-layers">
           <div className="phase8-section-head">
-            <label className="op-label"><Layers size={15} strokeWidth={2.2} /> Geological layers *</label>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={addLayer}><Plus size={14} /> Add layer</button>
+            <label className="op-label"><Layers size={15} strokeWidth={2.2} /> {t("log.layers")}</label>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={addLayer}><Plus size={14} /> {t("log.addLayer")}</button>
           </div>
           {layers.map((layer, index) => (
             <div className="phase8-layer" key={index}>
               <div className="op-row">
-                <NumInput placeholder="From ft" value={layer.fromFt} onChange={(v) => setLayer(index, "fromFt", v)} />
-                <NumInput placeholder="To ft" value={layer.toFt} onChange={(v) => setLayer(index, "toFt", v)} />
+                <NumInput placeholder={t("log.from")} value={layer.fromFt} onChange={(v) => setLayer(index, "fromFt", v)} />
+                <NumInput placeholder={t("log.to")} value={layer.toFt} onChange={(v) => setLayer(index, "toFt", v)} />
               </div>
               <div className="op-input-wrap">
-                <input className="op-input" value={layer.material} onChange={(e) => setLayer(index, "material", e.target.value)} placeholder="Layer material / rock type" />
+                <input className="op-input" value={layer.material} onChange={(e) => setLayer(index, "material", e.target.value)} placeholder={t("log.material")} />
                 {layers.length > 1 && <button type="button" className="op-mic" title="Remove layer" onClick={() => removeLayer(index)}><Trash2 size={16} /></button>}
               </div>
               <div className="op-chips">
@@ -363,31 +417,60 @@ export default function OperatorLog() {
                     onClick={() => setLayer(index, "material", name)}>{name}</button>
                 ))}
               </div>
-              <input className="op-input" value={layer.notes} onChange={(e) => setLayer(index, "notes", e.target.value)} placeholder="Layer notes (optional)" />
+              <input className="op-input" value={layer.notes} onChange={(e) => setLayer(index, "notes", e.target.value)} placeholder={t("log.notes")} />
             </div>
           ))}
         </div>
 
+        <div className="op-field">
+          <div className="phase8-section-head">
+            <label className="op-label">{t("log.extraStrikes")}</label>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setExtraStrikes((list) => [...list, { depthFt: "", flowLpm: "" }])}>
+              <Plus size={14} /> {t("log.addStrike")}
+            </button>
+          </div>
+          {extraStrikes.map((strike, index) => (
+            <div className="op-row" key={index}>
+              <NumInput placeholder={t("log.strikeDepth")} value={strike.depthFt} onChange={(v) => setExtraStrikes((list) => list.map((item, i) => i === index ? { ...item, depthFt: v } : item))} />
+              <NumInput placeholder={t("log.strikeFlow")} value={strike.flowLpm} onChange={(v) => setExtraStrikes((list) => list.map((item, i) => i === index ? { ...item, flowLpm: v } : item))} />
+              <button type="button" className="op-mic" title={t("queue.discard")} onClick={() => setExtraStrikes((list) => list.filter((_, i) => i !== index))}><Trash2 size={16} /></button>
+            </div>
+          ))}
+        </div>
+
+        <Field label={t("log.hardRock")} labelIcon={Layers} field="depthToHardRockFt" form={form} set={set}
+          numeric listeningField={listeningField} dictate={dictate} />
+
+        <Choice label={t("log.stopReason")} value={form.stopReason} onChange={(v) => set("stopReason", v)} options={STOP_REASONS} prefix="stop" />
+        {success && <Choice label={t("log.yieldMethod")} value={form.yieldMethod} onChange={(v) => set("yieldMethod", v)} options={YIELD_METHODS} prefix="method" />}
+        <Choice label={t("log.siteChosen")} value={form.siteChosenBy} onChange={(v) => set("siteChosenBy", v)} options={SITE_METHODS} prefix="site" />
+
+        <div className="op-field">
+          <label className="op-label">{t("log.predictionCode")}</label>
+          <input className="op-input" value={form.predictionId} onChange={(e) => set("predictionId", e.target.value)} maxLength={32} autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+          <p className="op-voice-note">{t("log.predictionCodeHelp")}</p>
+        </div>
+
         <div className="op-field phase8-evidence">
-          <label className="op-label"><Camera size={15} /> Evidence *</label>
-          <p className="op-voice-note">At least one site/drilling photo is required. Up to 8 photos and 2 optional videos. Files are checksum-verified by the server.</p>
+          <label className="op-label"><Camera size={15} /> {t("log.evidence")}</label>
+          <p className="op-voice-note">{t("log.evidenceHelp")}</p>
           <div className="phase8-upload-row">
             <label className="btn btn-ghost btn-sm phase8-file-btn">
-              <Camera size={15} /> Add photos
+              <Camera size={15} /> {t("log.addPhotos")}
               <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={(e) => { uploadFiles(e.target.files); e.target.value = ""; }} />
             </label>
             <label className="btn btn-ghost btn-sm phase8-file-btn">
-              <Video size={15} /> Add videos
+              <Video size={15} /> {t("log.addVideos")}
               <input type="file" accept="video/mp4,video/webm" multiple hidden onChange={(e) => { uploadFiles(e.target.files); e.target.value = ""; }} />
             </label>
-            {uploading && <span className="op-gps-status">Uploading…</span>}
+            {uploading && <span className="op-gps-status">{t("log.uploading")}</span>}
           </div>
           {evidence.length > 0 && (
             <div className="phase8-evidence-list">
               {evidence.map((item) => (
                 <div className="phase8-evidence-item" key={item.id}>
                   <span>{item.kind === "photo" ? <Camera size={14} /> : <Video size={14} />} {item.originalName}</span>
-                  <span>{Math.max(1, Math.round(item.byteSize / 1024))} KB</span>
+                  <span>{item.file ? t("log.localFile") : `${Math.max(1, Math.round(item.byteSize / 1024))} KB`}</span>
                   <button type="button" className="op-mic" title="Remove evidence" onClick={() => removeEvidence(item)}><Trash2 size={15} /></button>
                 </div>
               ))}
@@ -399,11 +482,24 @@ export default function OperatorLog() {
 
         <div className="op-actions">
           <button className="btn btn-primary btn-block op-submit" disabled={submitting || uploading}>
-            {submitting ? "Submitting…" : <>Submit for verification <ArrowRight size={18} strokeWidth={2.2} /></>}
+            {submitting ? t("log.submitting") : <>{t(navigator.onLine ? "log.submit" : "log.saveOffline")} <ArrowRight size={18} strokeWidth={2.2} /></>}
           </button>
         </div>
-        {!VOICE_SUPPORTED && <p className="op-voice-note">Voice input isn’t supported in this browser — typing remains fully supported.</p>}
+        {!VOICE_SUPPORTED && <p className="op-voice-note">{t("log.noVoice")}</p>}
       </form>
+    </div>
+  );
+}
+
+function Choice({ label, value, onChange, options, prefix }) {
+  const { t } = useI18n();
+  return (
+    <div className="op-field">
+      <label className="op-label">{label}</label>
+      <select className="op-input" value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
+        <option value="">{t("log.select")}</option>
+        {options.map((option) => <option key={option} value={option}>{t(`${prefix}.${option}`)}</option>)}
+      </select>
     </div>
   );
 }

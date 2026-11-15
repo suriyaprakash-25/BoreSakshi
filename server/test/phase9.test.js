@@ -1,4 +1,5 @@
 import test from "node:test";
+import { withLedgerDb } from "./support.js";
 import assert from "node:assert/strict";
 import express from "express";
 
@@ -90,7 +91,7 @@ function memoryDb(recordsInput = [operatorRecord()]) {
   const audits = [];
   const operators = [{ id: "op-1", name: "Operator One", phone: "1", role: "operator", status: "active", verified: true }];
   return {
-    api: {
+    api: withLedgerDb({
       getAllBorewells: async () => structuredClone(records),
       getBorewells: async () => structuredClone(records),
       updateBorewell: async (id, patch) => {
@@ -116,7 +117,7 @@ function memoryDb(recordsInput = [operatorRecord()]) {
         return structuredClone(operators[index]);
       },
       getAssignmentsByOperator: async () => [],
-    },
+    }),
     state() { return { records, predictions, audits, operators }; },
   };
 }

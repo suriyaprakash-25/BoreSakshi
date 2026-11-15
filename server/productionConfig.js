@@ -40,8 +40,12 @@ export function validateProductionDeploymentEnv(env = process.env) {
     if (!env.BACKUP_ENCRYPTION_KEY_BASE64) {
       errors.push("BACKUP_ENCRYPTION_KEY_BASE64 is required in production");
     }
-    if (env.REQUIRE_ML_READY !== "YES") {
-      errors.push("REQUIRE_ML_READY=YES is required for a production-ready BoreSakshi deployment");
+    // A data-collection pilot may run without a model, but only by saying so out loud.
+    if (env.REQUIRE_ML_READY !== "YES" && env.PILOT_WITHOUT_MODEL !== "YES") {
+      errors.push("REQUIRE_ML_READY=YES is required unless PILOT_WITHOUT_MODEL=YES is set for a no-model pilot");
+    }
+    if (env.REQUIRE_ML_READY === "YES" && env.PILOT_WITHOUT_MODEL === "YES") {
+      errors.push("PILOT_WITHOUT_MODEL=YES cannot be combined with REQUIRE_ML_READY=YES");
     }
 
     const media = String(env.RIG_MEDIA_DIR || "");

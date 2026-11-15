@@ -84,10 +84,10 @@ export async function storeEvidenceUpload({ buffer, mediaType, originalName, ope
   return { metadata, token };
 }
 
-export async function resolveEvidenceTokens(tokens, operatorId) {
+export async function resolveEvidenceTokens(tokens, operatorId, { now = Date.now() } = {}) {
   const unique = new Map();
   for (const token of tokens || []) {
-    const meta = verifyEvidenceToken(token, { operatorId });
+    const meta = verifyEvidenceToken(token, { operatorId, now });
     if (unique.has(meta.id)) throw new Error("Duplicate evidence file reference");
     const bytes = await readFile(fullPath(meta.objectKey));
     if (bytes.length !== meta.byteSize || sha256(bytes) !== meta.sha256) throw new Error(`Evidence integrity check failed for ${meta.id}`);

@@ -45,7 +45,7 @@ def _sha256_file(path: Path) -> str:
 def _write_json(path: Path, value: Any) -> dict[str, Any]:
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(value, indent=2, sort_keys=True) + "\n"
-    path.write_text(text, encoding="utf-8")
+    path.write_text(text, encoding="utf-8", newline="\n")
     return {
         "path": path.name,
         "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
@@ -65,7 +65,8 @@ class EvaluationConfig:
     folds: int = 5
     inner_folds: int = 3
     interval_coverage: float = 0.90
-    min_rows: int = 30
+    min_rows: int = 300
+    min_dry_holes: int = 60
     min_spatial_blocks: int = 5
     calibration_bins: int = 10
     seed: int = 42
@@ -189,6 +190,9 @@ def _task_readiness(task: str, y: np.ndarray, rows: list[dict[str, Any]], config
                 class_blocks = len(np.unique(groups[y == klass]))
                 if class_blocks < 2:
                     errors.append(f"class {int(klass)} occurs in fewer than two spatial blocks")
+            dry_holes = int((y == 0).sum())
+            if dry_holes < config.min_dry_holes:
+                errors.append(f"requires at least {config.min_dry_holes} dry holes; found {dry_holes}")
     elif len(y) and len(np.unique(y)) < 2:
         errors.append(f"{task} evaluation requires at least two distinct target values")
     return errors
@@ -600,10 +604,10 @@ def evaluate_phase4_run(
     manifest_path = evaluation_dir / "evaluation-manifest.json"
     report_path = evaluation_dir / "evaluation-report.md"
     checksum_path = evaluation_dir / "evaluation-manifest.sha256"
-    manifest_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    report_path.write_text(_markdown_report(report), encoding="utf-8")
+    manifest_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+    report_path.write_text(_markdown_report(report), encoding="utf-8", newline="\n")
     manifest_sha = _sha256_file(manifest_path)
-    checksum_path.write_text(f"{manifest_sha}  {manifest_path.name}\n", encoding="utf-8")
+    checksum_path.write_text(f"{manifest_sha}  {manifest_path.name}\n", encoding="utf-8", newline="\n")
     report["artifacts"] = {
         "manifest": {
             "path": manifest_path.name,

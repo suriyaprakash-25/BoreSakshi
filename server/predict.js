@@ -1,25 +1,10 @@
-// predict.js — Phase 7/10 real prediction orchestration.
-// The public response contract remains compatible with the existing frontend.
-// Real inference is delegated to the Python ML service; the deterministic
-// heuristic exists only as an explicitly-labelled outage/coverage/contract fallback.
+// predict.js — real prediction orchestration. Inference is delegated to the Python
+// ML service. When it cannot answer, the result is an honest "no estimate".
 import { mlClient as defaultMlClient } from "./mlClient.js";
 import { assertMlPredictionContract, PREDICTION_CONTRACT_VERSION } from "./predictionContract.js";
+import { insidePilotRegion } from "./pilotRegion.js";
 
 export const NEAR_KM = 5;
-
-function seeded(lat, lng) {
-  const s = Math.sin(lat * 12.9898 + lng * 78.233) * 43758.5453;
-  return s - Math.floor(s);
-}
-
-function mockZone(lat, lng) {
-  const r = seeded(lat, lng);
-  if (r < 0.33) return { rock: "Weathered / fractured zone", baseProb: 0.72, depth: [180, 300] };
-  if (r < 0.66) return { rock: "Hard crystalline rock", baseProb: 0.5, depth: [300, 550] };
-  return { rock: "Compact granite (low yield)", baseProb: 0.34, depth: [400, 700] };
-}
-
-const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
 export function distanceKm(a, b) {
   const R = 6371;
@@ -52,42 +37,28 @@ function nearbySummary(lat, lng, nearbyLogs) {
   };
 }
 
-export function predictHeuristic({ lat, lng, nearbyLogs = [], fallbackReason = null }) {
-  const z = mockZone(lat, lng);
-  const jitter = (seeded(lat + 1, lng - 1) - 0.5) * 0.12;
-  const withDist = nearbyLogs.map((b) => ({
-    log: b,
-    d: typeof b.distanceKm === "number" ? b.distanceKm : distanceKm({ lat, lng }, b),
-  }));
-  const proximity = (d) => Math.max(0, 1 - d / NEAR_KM);
-  let successW = 0, failW = 0;
-  for (const { log, d } of withDist) {
-    if (log.success) successW += proximity(d);
-    else failW += proximity(d);
-  }
-  const summary = nearbySummary(lat, lng, nearbyLogs);
-  const NEUTRAL = 50;
-  const K = 6;
-  const geologyImpact = Math.round((z.baseProb - 0.5) * 100 + jitter * 100);
-  const successImpact = Math.min(30, Math.round(successW * K));
-  const failImpact = -Math.min(30, Math.round(failW * K));
-  const rawProb = NEUTRAL + geologyImpact + successImpact + failImpact;
-  const successProbability = clamp(rawProb, 8, 95);
-  let confidence = "Low";
-  if (summary.nearbyCount >= 8) confidence = "High";
-  else if (summary.nearbyCount >= 3) confidence = "Medium";
-  const yieldLow = Math.round((successProbability * 9) / 10) * 10;
-  const yieldHigh = Math.round((successProbability * 15) / 10) * 10;
-  const warning = "ML prediction is unavailable; this result is an explicitly labelled deterministic heuristic fallback and must not be interpreted as the trained model.";
+const NO_ESTIMATE_TEXT = {
+  OUTSIDE_PILOT_AREA: "BoreSakshi does not give estimates for this location yet. It is outside the pilot area.",
+  LOW_COVERAGE: "There is not enough geological and satellite data for this location to give an honest estimate.",
+  MODEL_UNAVAILABLE: "The prediction model is not available right now, so no estimate was made.",
+  NOT_RELEASED: "The prediction model is being tested against real drilling results before it is released.",
+};
+
+// There is deliberately no fallback number. If the trained model cannot answer,
+// the farmer gets this response plus the verified wells nearby, and nothing is
+// written to the ledger.
+export function noEstimate({ lat, lng, nearbyLogs = [], reason = "MODEL_UNAVAILABLE" }) {
   return {
-    successProbability,
-    depthBandFt: z.depth,
-    expectedYieldLpm: [yieldLow, yieldHigh],
-    confidence,
-    rockType: z.rock,
-    basis: `${warning} Estimated from regional heuristic geology and ${summary.nearbyCount} nearby verified drill log(s).`,
-    isMock: true,
-    predictionSource: "heuristic_fallback",
+    estimateAvailable: false,
+    noEstimateReason: reason,
+    successProbability: null,
+    depthBandFt: null,
+    expectedYieldLpm: null,
+    confidence: null,
+    rockType: null,
+    basis: NO_ESTIMATE_TEXT[reason],
+    isMock: false,
+    predictionSource: "no_estimate",
     modelAvailable: false,
     modelVersion: null,
     deploymentId: null,
@@ -96,17 +67,11 @@ export function predictHeuristic({ lat, lng, nearbyLogs = [], fallbackReason = n
     featureSnapshotRef: null,
     featureSnapshot: null,
     predictionTimestamp: new Date().toISOString(),
-    coverageWarning: warning,
-    fallbackReason: fallbackReason || "ML service unavailable",
-    uncertainty: { available: false, reason: "No calibrated ML uncertainty is available during heuristic fallback." },
+    coverageWarning: null,
+    uncertainty: { available: false, reason: NO_ESTIMATE_TEXT[reason] },
     explanations: [],
-    factors: [
-      { label: "Baseline prior", impact: NEUTRAL, base: true },
-      { label: `Regional heuristic geology — ${z.rock.toLowerCase()}`, impact: geologyImpact },
-      { label: `Nearby verified successes (${summary.successCount})`, impact: successImpact },
-      { label: `Nearby verified dry holes (${summary.failCount})`, impact: failImpact },
-    ],
-    confidenceReason: summary,
+    factors: [],
+    confidenceReason: nearbySummary(lat, lng, nearbyLogs),
   };
 }
 
@@ -120,6 +85,7 @@ function mapMlResponse(result, { lat, lng, nearbyLogs }) {
     method: item.method || "model_explanation",
   }));
   return {
+    estimateAvailable: true,
     successProbability: Math.round(Number(result.successProbability) * 10) / 10,
     depthBandFt: [Math.round(Number(depth.min)), Math.round(Number(depth.max))],
     expectedYieldLpm: [Math.round(Number(yieldRange.min)), Math.round(Number(yieldRange.max))],
@@ -154,6 +120,7 @@ function mapMlResponse(result, { lat, lng, nearbyLogs }) {
 }
 
 export async function predictBorewell({ lat, lng, nearbyLogs = [], client = defaultMlClient }) {
+  if (!insidePilotRegion(lat, lng)) return noEstimate({ lat, lng, nearbyLogs, reason: "OUTSIDE_PILOT_AREA" });
   try {
     const result = await client.predict({
       lat,
@@ -177,7 +144,8 @@ export async function predictBorewell({ lat, lng, nearbyLogs = [], client = defa
     return mapMlResponse(result, { lat, lng, nearbyLogs });
   } catch (error) {
     const reason = error?.code ? `${error.code}: ${error.message}` : error?.message || "ML service unavailable";
-    console.warn(`[prediction] ml_fallback reason=${reason}`);
-    return predictHeuristic({ lat, lng, nearbyLogs, fallbackReason: reason });
+    console.warn(`[prediction] no_estimate reason=${reason}`);
+    const lowCoverage = error?.code === "INSUFFICIENT_FEATURE_COVERAGE";
+    return noEstimate({ lat, lng, nearbyLogs, reason: lowCoverage ? "LOW_COVERAGE" : "MODEL_UNAVAILABLE" });
   }
 }

@@ -3,7 +3,12 @@
     "allow": [
       "PowerShell(cd D:\\\\Hackathon\\\\BoreSakshi\\\\web; \\(Get-Content package.json | ConvertFrom-Json\\).dependencies | ConvertTo-Json; Write-Output \"--- lucide check ---\"; node -e \"const p=require\\('lucide-react/package.json'\\); console.log\\('lucide-react', p.version\\)\")",
       "Bash(node *)",
-      "Skill(dataviz)"
+      "Skill(dataviz)",
+      "Bash(grep -v -E '\\\\.\\(png|jpg|jpeg|svg|ico|webp|woff2?\\)$')",
+      "Bash(xargs wc -l)",
+      "Bash(sort -k2)",
+      "Bash(git check-ignore *)",
+      "Bash(grep -E '\\\\.env$|\\\\.vercel|dist/')"
     ]
   }
 }

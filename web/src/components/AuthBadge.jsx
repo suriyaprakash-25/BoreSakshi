@@ -3,9 +3,11 @@
 import { Link } from "react-router-dom";
 import { HardHat, LogOut, LogIn } from "lucide-react";
 import { useAuth } from "../auth.jsx";
+import { useI18n } from "../i18n.jsx";
 
 export default function AuthBadge() {
   const { operator, signOut } = useAuth();
+  const { t } = useI18n();
 
   if (operator) {
     return (
@@ -14,9 +16,9 @@ export default function AuthBadge() {
           <HardHat size={15} strokeWidth={2.2} />
           <span className="auth-name-text">{operator.name}</span>
         </span>
-        <button type="button" className="auth-signout" onClick={signOut} title="Sign out">
+        <button type="button" className="auth-signout" onClick={signOut} title={t("auth.signOut")}>
           <LogOut size={15} strokeWidth={2.2} />
-          <span className="auth-signout-text">Sign out</span>
+          <span className="auth-signout-text">{t("auth.signOut")}</span>
         </button>
       </div>
     );
@@ -25,7 +27,7 @@ export default function AuthBadge() {
   return (
     <Link to="/signin" className="auth-signin">
       <LogIn size={15} strokeWidth={2.2} />
-      <span>Sign in</span>
+      <span>{t("auth.signIn")}</span>
     </Link>
   );
 }
