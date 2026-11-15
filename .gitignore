@@ -1,2 +1,5 @@
 config.bat
 node_modules
+
+# env files: never commit secrets
+!.env.example
