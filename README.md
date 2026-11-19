@@ -35,6 +35,46 @@ Node contract validation + Phase 11 accountability snapshot
 
 Every accepted ML prediction carries a model version, feature version, prediction timestamp, uncertainty, explanations, coverage metadata and an immutable `featureSnapshotRef`. If the Python service is unavailable or returns an invalid/insufficient-coverage response, Node returns an honest "no estimate" with the verified wells nearby. No guessed number is shown or stored.
 
+## Groundwater outlook (anywhere in India)
+
+The borewell success estimate is only given inside the Namakkal–Tiruchengode pilot area, because that is the estimate scored on the accountability ledger. Alongside it, `POST /api/predict` now returns a **groundwater outlook** for any location in India:
+
+- depth to the shallow water table before and after the monsoon, each with an 80% likely range;
+- the chance that water is within 10 m before the monsoon;
+- the rock type at the location, the nearest monitored well, and the error measured for the farmer's own area.
+
+```text
+Farmer taps any point in India
+   ↓
+Node /api/predict ──► borewell estimate (pilot area only, ledger-scored)
+   │
+   └──► Python /ml/groundwater
+           ↓ refuses outside India, on open water, >50 km from a monitored well,
+           ↓ or when a map layer is missing
+        live terrain, land cover, rainfall, MODIS and GSI geology features
+        (same code that built the training table)
+           ↓
+        LightGBM pre/post-monsoon depth + conformal ranges + calibrated chance
+           ↓
+Node drops any response that fails validation → panel shows outlook or a reason
+```
+
+The outlook is context, not a prediction: it is never stored in the ledger, and the panel tells the farmer it is the open-well water table, not a promise that a borewell will strike water. If the cloud map servers are unreachable the farmer sees "try again", never a guessed number.
+
+**Training and accuracy.** The model is trained on 19,602 CGWB open-well monitoring stations across India (readings since 2015). Typical error before the monsoon, with whole 0.5° regions held out from training:
+
+| Area | Before monsoon | After monsoon |
+|---|---|---|
+| All India | 3.51 m (nearby-wells average 3.76 m) | 3.08 m (3.35 m) |
+| Tamil Nadu | 2.48 m | 2.49 m |
+| Peninsula | 2.57 m | 2.05 m |
+| North India | 4.47 m | 4.14 m |
+| Pilot area (stations held out) | 2.85 m | 2.86 m |
+
+The 80% ranges covered 80.0% and 79.7% of held-out stations. North India errors are larger in metres because water there is tens of metres deep. Full results and limits are in section 10 of `docs/ml-data-and-training-plan.md`.
+
+**Settings.** `GROUNDWATER_OUTLOOK=NO` turns it off on the server; `ML_GROUNDWATER_TIMEOUT_MS` (default 20000) sets its own timeout, separate from the borewell model. On the ML service, `BORESAKSHI_GROUNDWATER=NO` skips loading it and `BORESAKSHI_GROUNDWATER_MODEL` points at a different model package.
+
 ## Hydrogeological ML Accuracy & Precision Enhancements (v1.7)
 
 Version 1.7 bridges the gap between regional satellite/DEM macro-grids and localized 10-meter plot-level drilling success by integrating hydrogeological physics and field sounding data:
@@ -235,6 +275,16 @@ python continuous.py rollback ... --confirm ROLLBACK
 
 When `BORESAKSHI_DEPLOYMENT_MANIFEST` points to a checksummed ACTIVE Phase 10 deployment pointer, the ML service resolves that exact reviewed model/evaluation/feature chain. `BORESAKSHI_PHASE6_APPROVED=YES` remains a mandatory global serving kill switch.
 
+The groundwater outlook loads in the background when the same service starts, and works even while the borewell model is not ready. It needs the geospatial packages and the trained model data, which is git-ignored (`ml/data_public`: `gw_model/`, `gw_results.json`, `layers/` and the GSI files):
+
+```bash
+python -m pip install -r requirements.txt -r requirements-data.txt
+python -m uvicorn service:app --host 127.0.0.1 --port 8000
+curl http://127.0.0.1:8000/ml/groundwater/health      # ok: true once loaded
+```
+
+In Docker, mount that folder and set `BORESAKSHI_PUBLIC_DATA_DIR` (the production compose file mounts `GROUNDWATER_DATA_DIR`, default `../ml/data_public`, read-only). Live outlooks also need internet access for the Copernicus DEM and ESA WorldCover rasters.
+
 **2) Node backend**
 
 ```bash
@@ -297,5 +347,6 @@ Signup displays a recovery code once. Save it securely; only its hash is stored 
 - [x] Phase 17 — full frontend/backend/ML/integration/end-to-end release testing
 - [x] Phase 18 — production deployment package, CI/CD, rollback, monitoring, backup and recovery controls
 - [x] v1.7 — Five Hydrogeological ML Accuracy & Precision Enhancements (Fracture networks, CGWB engineered priors, infiltration physics, monotonic constraints, and micro-geophysics)
+- [x] v1.8 — India-wide groundwater outlook in the farmer app (19,602 CGWB stations, Tamil and English, never ledger-scored)
 
-All BoreSakshi software roadmap phases through v1.7 are now implemented in `main`. Phase 10 still never replaces production automatically, and a live production cutover still requires the real external infrastructure/secrets plus the reviewed active ML artifacts and explicit deployment approvals described in Phase 18.
+All BoreSakshi software roadmap phases through v1.8 are now implemented in `main`. Phase 10 still never replaces production automatically, and a live production cutover still requires the real external infrastructure/secrets plus the reviewed active ML artifacts and explicit deployment approvals described in Phase 18.
