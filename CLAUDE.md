@@ -164,10 +164,24 @@ season of any new model.
 
 **Training data.** `ml/public_data/` builds helper-model data from public wells. That data
 never enters `borewells`, and readings inside the pilot box are excluded by an assertion.
-It also trains the groundwater model (`train_groundwater.py`, `gw_finalize.py`, `gw_map.py`)
-on CGWB water levels. That model predicts shallow water-table depth, not borewell success,
-and the app does not call it. `retrain_with_field_data.py` adds drilling outcomes later.
+It also trains the groundwater model (`train_groundwater.py`, `gw_finalize.py`) on CGWB
+open-well water levels across India. That model predicts shallow water-table depth, not
+borewell success. `retrain_with_field_data.py` adds drilling outcomes later.
 See section 9 of `docs/ml-data-and-training-plan.md`.
+
+**Groundwater outlook (anywhere in India).** `POST /api/predict` also returns
+`groundwater`, from `server/groundwater.js` → ML `POST /ml/groundwater` →
+`ml/public_data/gw_live.py`. Live features are computed by the *same* code that built the
+training table (`extract_features.dem_row`/`surface_row`, `india_layers.Layers`,
+`gw_live.GeologyIndex`, `train_groundwater` evidence), so keep training and serving on
+those functions. The outlook is context, not a prediction: it never enters the ledger and
+the pilot box does not gate it (the box still gates the borewell estimate). It refuses with
+`OUTSIDE_COVERAGE` (outside India or open water), `LOW_COVERAGE` (nearest monitored well
+over 50 km, or a map layer missing) or `FEATURE_SOURCE_UNAVAILABLE` (cloud rasters down);
+the server drops any response that fails `isValidOutlook`. It has its own client, timeout
+(`ML_GROUNDWATER_TIMEOUT_MS`) and circuit breaker; `GROUNDWATER_OUTLOOK=NO` turns it off.
+The ML service needs `requirements-data.txt` and the git-ignored `ml/data_public`
+(model, results, `layers/`) mounted via `BORESAKSHI_PUBLIC_DATA_DIR`.
 Drill logs now store `drillDetails`, `confidenceGrade` and append-only `followUps`.
 
 **Language.** All farmer and operator text lives in `web/src/strings.js` (Tamil and

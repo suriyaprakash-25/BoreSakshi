@@ -43,11 +43,12 @@ GROUPS = {
                 "log_upstream", "drain_distance_m", "hand_m", "drain_density"],
     "fracture_proxy": ["line_score", "line_distance_m", "line_density_1km", "line_density_3km", "line_coherence", "line_crossing"],
     "geology_gsi": ["gsi_family_code", "gsi_unit_code", "gsi_age_rank", "faults_distance_km", "thrusts_distance_km", "contact_distance_km"],
-    "weathering": ["soilgrids_bedrock_cm", "soilgrids_r_horizon_cm"],
-    "soil": ["clay_30cm", "sand_30cm"],
     "climate": ["rain_mean_mm", "rain_cv"],
     "satellite": ["ndvi_dry", "ndvi_wet", "ndvi_seasonal_drop", "lst_dry_k", "et_mm", "pet_mm", "aridity_et_pet"],
-    "surface_water": ["jrc_occurrence_1km", "jrc_water_km", "water_distance_m", "share_water"],
+    # Only groups the live service can compute in a few seconds per tap. SoilGrids and
+    # JRC water history were dropped: neither made the peninsular model's final cut for
+    # the served targets, and both are slow to read per location.
+    "surface_water": ["water_distance_m", "share_water"],
     "land_cover": ["share_tree", "share_scrub", "share_crop", "share_built", "share_bare"],
 }
 LOCAL = ["near_value", "near_head_depth", "near_km", "near_count", "near_spread",
@@ -104,7 +105,11 @@ def history_evidence(query: pd.DataFrame, target: str, hidden_blocks: set, hidde
 
 def load() -> pd.DataFrame:
     frame = pd.read_csv(GW_STATIONS)
-    for name in ["dem", "gsi", "weathering", "soil", "climate", "modis", "jrc", "surface"]:
+    # The farmer-facing outlook is the shallow water table seen in open wells. Bore and
+    # tube wells read deeper aquifers and are kept for a separate deep model.
+    if "kind" in frame.columns:
+        frame = frame[frame.kind == "shallow"].reset_index(drop=True)
+    for name in ["dem", "gsi", "climate", "modis", "surface"]:
         path = FEATURE_DIR / f"{name}.csv"
         if path.exists():
             frame = frame.merge(pd.read_csv(path).drop_duplicates("site"), on="site", how="left")
@@ -312,6 +317,8 @@ def regional_scores(frame: pd.DataFrame, target: str, predicted: np.ndarray) -> 
     south, west, north, east = EXCLUDED_BOX
     masks = {
         "tamilNaduBox": frame.latitude.between(8, 13.6) & frame.longitude.between(76.2, 80.4),
+        "peninsula": frame.latitude < 22,
+        "northIndia": frame.latitude >= 22,
         "pilotArea": frame.latitude.between(south, north) & frame.longitude.between(west, east),
         "hardRock": frame.gsi_family.isin(["gneiss", "granite", "charnockite", "schist"]),
     }

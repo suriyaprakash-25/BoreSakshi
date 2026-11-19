@@ -67,11 +67,11 @@ def fetch_tile(layer: str, west: float, south: float) -> list[dict]:
     return rows
 
 
-def download(name: str) -> gpd.GeoDataFrame:
-    path = CACHE / f"gsi_{name}.gpkg"
+def download(name: str, region: tuple = GW_REGION, path=None) -> gpd.GeoDataFrame:
+    path = path or CACHE / f"gsi_{name}.gpkg"
     if path.exists():
         return gpd.read_file(path)
-    south, west, north, east = GW_REGION
+    south, west, north, east = region
     rows = []
     for lat in range(int(south) - 1, int(north) + 1, TILE_DEG):
         for lng in range(int(west) - 1, int(east) + 1, TILE_DEG):
@@ -99,7 +99,10 @@ def age_rank(text: str) -> int:
 def main() -> None:
     sites = pd.read_csv(SITES)
     points = gpd.GeoDataFrame(sites[["site"]], geometry=gpd.points_from_xy(sites.longitude, sites.latitude), crs="EPSG:4326")
-    geology = download("geology")
+    # India-wide layers, shared with live prediction.
+    from india_layers import INDIA, LAYER_DIR
+    india = lambda name: download(name, region=INDIA, path=LAYER_DIR / f"gsi_{name}_india.gpkg")
+    geology = india("geology")
     print("geology polygons", len(geology), "units", geology.INDEX_.nunique(), flush=True)
     joined = gpd.sjoin(points, geology[["INDEX_", "Age", "geometry"]], how="left", predicate="within")
     joined = joined.drop_duplicates("site").set_index("site")
@@ -111,7 +114,7 @@ def main() -> None:
 
     projected = points.to_crs(METRIC_CRS)
     for name in ("faults", "thrusts"):
-        lines = download(name)
+        lines = india(name)
         print(name, len(lines), flush=True)
         merged = unary_union(lines.to_crs(METRIC_CRS).geometry.values)
         table[f"{name}_distance_km"] = projected.geometry.distance(merged).to_numpy() / 1000

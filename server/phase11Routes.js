@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 
 import { predictSchema } from "./validation.js";
 import { noEstimate, predictBorewell, distanceKm, NEAR_KM } from "./predict.js";
+import { groundwaterOutlook } from "./groundwater.js";
 import { isTrustedOutcome } from "./rigData.js";
 import { createPhase15Router } from "./phase15Routes.js";
 import {
@@ -57,6 +58,7 @@ export function createPhase11Router({
   requireAdmin,
   validate,
   predictor = predictBorewell,
+  groundwater = groundwaterOutlook,
 }) {
   const router = express.Router();
 
@@ -77,7 +79,12 @@ export function createPhase11Router({
         .filter((borewell) => borewell.distanceKm <= NEAR_KM)
         .sort((a, b) => a.distanceKm - b.distanceKm);
 
-      const prediction = await predictor({ lat, lng, nearbyLogs });
+      // The borewell estimate (pilot area, ledger-scored) and the groundwater outlook
+      // (anywhere in India, context only) are independent, so they run together.
+      const [prediction, outlook] = await Promise.all([
+        predictor({ lat, lng, nearbyLogs }),
+        groundwater({ lat, lng }),
+      ]);
       // Silent pilot: the estimate enters the ledger but the farmer doesn't see it,
       // so the model is scored on real drilling before anyone relies on it.
       const silent = process.env.ML_SILENT_PILOT === "YES" && prediction.estimateAvailable !== false;
@@ -124,6 +131,7 @@ export function createPhase11Router({
         ...(silent ? noEstimate({ lat, lng, nearbyLogs, reason: "NOT_RELEASED" }) : prediction),
         predictionId: saved?.id ?? null,
         accountabilityStatus: saved?.accountability?.status ?? null,
+        groundwater: outlook,
         nearbyVerifiedLogs: nearbyLogs.length,
         nearby: nearbyLogs.slice(0, 20).map((borewell) => ({
           id: borewell.id,

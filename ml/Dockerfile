@@ -6,8 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 RUN groupadd --gid 10001 boresakshi \
     && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin boresakshi
-COPY requirements.txt ./
-RUN python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+COPY requirements.txt requirements-data.txt ./
+# requirements-data.txt adds the geospatial stack the groundwater outlook needs.
+RUN python -m pip install --upgrade pip && python -m pip install -r requirements.txt -r requirements-data.txt
 COPY --chown=boresakshi:boresakshi . .
 USER boresakshi
 EXPOSE 8000

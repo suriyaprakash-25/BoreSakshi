@@ -324,7 +324,7 @@ Map data does help here, unlike with yield. The gain over nearby stations is rea
 | Pilot map, 8,436 points about 1 km apart | `ml/data_public/gw_pilot_map.csv` (git-ignored) |
 | Query a location | `python gw_map.py at LAT LNG` |
 
-The app does not use this model yet. Its output is groundwater context, not a borewell success prediction, so the farmer screen needs its own wording first.
+The app now uses the India version of this model; see section 10.
 
 ### Adding field data
 
@@ -336,6 +336,43 @@ The app does not use this model yet. Its output is groundwater context, not a bo
 Tested on simulated records only. It saved a model with 450 simulated records and refused with 40.
 
 Any model it saves should run as a silent pilot, with hydrogeologist review, before farmers see it. The script covers the pilot map area only.
+
+## 10. India groundwater outlook in the app: 18 November 2026
+
+The groundwater model was retrained on all of India and connected to the farmer map. Any location in India now gets a groundwater outlook. The Namakkal–Tiruchengode pilot box still limits the borewell success estimate, because only that estimate is scored on the ledger.
+
+### What changed
+
+- **Training data:** 19,602 CGWB open-well stations across India (readings since 2015), up from 9,573 in the peninsula. Bore wells, tube wells and piezometers (5,282) read deeper aquifers and are left out of this model.
+- **Same code for training and live use:** terrain and land cover (`extract_features`), rainfall and MODIS medians (`india_layers`, stored at about 1 km), and GSI geology (`gw_live.GeologyIndex`). SoilGrids and JRC surface water were dropped because they are too slow to read for each tap, and neither made the final cut for the served targets before.
+- **Live service:** `POST /ml/groundwater` (`ml/public_data/gw_live.py`), about 2–6 seconds for a new location, with answers cached for about 500 m. It refuses outside India or on open water, more than 50 km from a monitored well, and where a map layer is missing.
+
+### Results on data held out from training
+
+| Test | Before monsoon, typical error | After monsoon, typical error |
+|---|---|---|
+| Whole 0.5° regions held out, all India | 3.51 m (nearby average 3.76 m, mean 4.96 m) | 3.08 m (nearby average 3.35 m) |
+| Tamil Nadu, regions held out | 2.48 m (peninsular model 2.46 m) | 2.49 m (peninsular model 2.52 m) |
+| Peninsula, regions held out | 2.57 m | 2.05 m |
+| North India, regions held out | 4.47 m | 4.14 m |
+| Pilot area, stations held out | 2.85 m (peninsular model 2.94 m) | 2.86 m (peninsular model 2.96 m) |
+| Hard rock, regions held out | 2.25 m | 1.92 m |
+
+80% ranges covered 80.0% (before monsoon) and 79.7% (after) of held-out stations. North India errors are larger because water there is much deeper (tens of metres), so a similar relative error means more metres.
+
+Water within 10 m before the monsoon, regions held out: ROC AUC 0.84 (peninsular model 0.77). The model now catches 45% of deep (more than 10 m) places at the 50% call, up from 8%, and it is right 71% of the time when it says "deep". Calibration error is 0.004.
+
+### Checked in the app
+
+Through the real server, database and web build: Madurai 6.4 m, Coimbatore 11.0 m, Chennai 3.8 m and Lucknow 22.7 m before the monsoon. A point in the Bay of Bengal and one in London were refused with a reason. No outlook was written to the ledger. The panel shows the error measured for the farmer's area (Tamil Nadu 2.48 m, North India 4.47 m).
+
+### Limits
+
+- The outlook is the shallow water table seen in open wells. It is not a borewell result, and the panel says so.
+- Live use depends on public cloud rasters (Copernicus DEM, ESA WorldCover). If they are unreachable the farmer sees "try again", never a guess.
+- The GSI layer has holes, so about 3% of stations are "unmapped". The model learned that category; it is not refused.
+- 220 coastal stations have no DEM tile and were left out.
+- The peninsular model is kept in `ml/data_public/gw_model_v2_peninsula/` with its results in `gw_results_v2_peninsula.json`.
 
 ## Sources
 

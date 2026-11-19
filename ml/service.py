@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
+import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Response
@@ -42,6 +45,60 @@ class PredictRequest(BaseModel):
     lng: float = Field(ge=-180, le=180)
     nearbyBorewells: list[NearbyBorewell] = Field(default_factory=list, max_length=500)
     predictionTimestamp: datetime | None = None
+
+
+class GroundwaterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+
+
+class GroundwaterManager:
+    """Loads the India groundwater outlook model off the request path.
+
+    It lives beside the public-data scripts because live features must be computed by
+    exactly the same code that built the training table.
+    """
+
+    def __init__(self, loader=None):
+        self.predictor = None
+        self.error: str | None = "loading"
+        self._loader = loader or self._default_loader
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _default_loader():
+        scripts = Path(__file__).resolve().parent / "public_data"
+        if str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
+        # A farmer is waiting: fail fast on a stalled map server instead of the batch
+        # pipeline's long timeouts (set before GDAL is first imported).
+        os.environ.setdefault("GDAL_HTTP_TIMEOUT", "15")
+        os.environ.setdefault("GDAL_HTTP_MAX_RETRY", "2")
+        os.environ.setdefault("GDAL_HTTP_RETRY_DELAY", "1")
+        import gw_live  # noqa: PLC0415 - heavy geospatial stack, imported only when enabled
+
+        model = os.getenv("BORESAKSHI_GROUNDWATER_MODEL", "").strip() or None
+        return gw_live.LiveGroundwater(model_path=model)
+
+    def load(self) -> None:
+        with self._lock:
+            started = time.perf_counter()
+            try:
+                self.predictor = self._loader()
+                self.error = None
+                logger.info("groundwater_model_loaded version=%s seconds=%.1f", self.predictor.model_version, time.perf_counter() - started)
+            except Exception as exc:  # missing files or packages: the endpoint reports not ready
+                self.predictor = None
+                self.error = f"{type(exc).__name__}: {exc}"
+                logger.error("groundwater_model_load_failed error=%s", self.error)
+
+    def start(self) -> None:
+        if os.getenv("BORESAKSHI_GROUNDWATER", "YES").strip().upper() != "YES":
+            self.error = "groundwater outlook disabled (BORESAKSHI_GROUNDWATER)"
+            return
+        threading.Thread(target=self.load, name="groundwater-load", daemon=True).start()
 
 
 class BundleManager:
@@ -96,8 +153,9 @@ class BundleManager:
             return cls(error=str(exc), deployment=deployment)
 
 
-def create_app(manager: BundleManager | None = None) -> FastAPI:
+def create_app(manager: BundleManager | None = None, groundwater: GroundwaterManager | None = None) -> FastAPI:
     state: dict[str, BundleManager | None] = {"manager": manager}
+    outlook = groundwater or GroundwaterManager()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -105,6 +163,9 @@ def create_app(manager: BundleManager | None = None) -> FastAPI:
             state["manager"] = BundleManager.from_environment()
         current = state["manager"]
         logger.info("ml_service_start ready=%s error=%s", current.ready, current.error)
+        # Tests inject their own managers; only the real service loads the heavy model.
+        if groundwater is None and manager is None:
+            outlook.start()
         yield
 
     app = FastAPI(
@@ -208,6 +269,33 @@ def create_app(manager: BundleManager | None = None) -> FastAPI:
             (time.perf_counter() - started) * 1000,
         )
         return result
+
+    @app.post("/ml/groundwater")
+    def groundwater_outlook(request: GroundwaterRequest):
+        """Shallow water-table outlook for any location in India. Not a borewell prediction."""
+        predictor = outlook.predictor
+        if predictor is None:
+            raise HTTPException(status_code=503, detail={"code": "GROUNDWATER_NOT_READY", "message": outlook.error or "loading"})
+        started = time.perf_counter()
+        try:
+            result = predictor.predict(request.lat, request.lng)
+        except Exception as exc:
+            reason = getattr(exc, "code", None)
+            if reason in ("OUTSIDE_COVERAGE", "LOW_COVERAGE"):
+                raise HTTPException(status_code=422, detail={"code": reason, "message": str(exc)}) from exc
+            if reason == "FEATURE_SOURCE_UNAVAILABLE":
+                raise HTTPException(status_code=503, detail={"code": reason, "message": str(exc)}) from exc
+            logger.exception("groundwater_failed")
+            raise HTTPException(status_code=500, detail={"code": "GROUNDWATER_FAILED", "message": "Groundwater outlook failed"}) from exc
+        logger.info("groundwater_ok model=%s ms=%.0f", result.get("modelVersion"), (time.perf_counter() - started) * 1000)
+        return result
+
+    @app.get("/ml/groundwater/health")
+    def groundwater_health(response: Response):
+        ready = outlook.predictor is not None
+        if not ready:
+            response.status_code = 503
+        return {"ok": ready, "modelVersion": getattr(outlook.predictor, "model_version", None), "error": outlook.error}
 
     return app
 

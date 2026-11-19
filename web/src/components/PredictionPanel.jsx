@@ -190,19 +190,73 @@ function PredictionCode({ id }) {
   );
 }
 
+// GSI names like "Undiff.fluvial/aeolian/coastal" may wrap after a slash or dot.
+const breakable = (name) => name.replace(/([/.])/g, "$1​");
+
+const metres = (value) => (value >= 10 ? Math.round(value) : Math.round(value * 10) / 10);
+
+// Shallow water table from the groundwater model: anywhere in India, never a borewell
+// promise, and only real model numbers (the server drops anything else).
+function GroundwaterCard({ outlook }) {
+  const { t } = useI18n();
+  const season = (key, label) => (
+    <Stat
+      icon={<Droplets size={18} strokeWidth={2.2} />}
+      label={t(label)}
+      value={t("gw.depth", { m: metres(outlook[key].depthM) })}
+      sub={t("gw.likely", { low: metres(outlook[key].lowM), high: metres(outlook[key].highM) })}
+    />
+  );
+  const mae = outlook.validation?.preMonsoonMaeM;
+  return (
+    <div className="groundwater">
+      <div className="stats">
+        {season("preMonsoon", "gw.pre")}
+        {season("postMonsoon", "gw.post")}
+        <Stat icon={<Waves size={18} strokeWidth={2.2} />} label={t("gw.chance")} value={`${Math.round(outlook.chanceWithin10m * 100)}%`} />
+        {outlook.rockUnit && <Stat icon={<Layers size={18} strokeWidth={2.2} />} label={t("gw.rock")} value={breakable(outlook.rockUnit)} />}
+      </div>
+      <div className="basis">
+        {t("gw.basis", { stations: Number(outlook.validation?.stations || 0).toLocaleString("en-IN"), km: Math.round(outlook.nearestStationKm) })}
+        {mae != null && <> {t("gw.accuracy", { mae })}</>}
+      </div>
+      <div className="advisory">{t("gw.notBorewell")}</div>
+    </div>
+  );
+}
+
+function GroundwaterMissing({ outlook }) {
+  const { t } = useI18n();
+  if (!outlook || outlook.available) return null;
+  return <div className="basis">{t(`gw.none.${outlook.reason}`)}</div>;
+}
+
 function NoEstimate({ data, coords }) {
   const { t } = useI18n();
+  const outlook = data.groundwater?.available ? data.groundwater : null;
   return (
     <div className="panel panel-result">
       <div className="result-head">
-        <div className="empty-badge empty-badge-warn"><Info size={28} strokeWidth={2} /></div>
+        <div className={`empty-badge ${outlook ? "" : "empty-badge-warn"}`}>
+          {outlook ? <Droplets size={28} strokeWidth={2} /> : <Info size={28} strokeWidth={2} />}
+        </div>
         <div className="result-head-text">
-          <div className="result-title">{t("none.title")}</div>
+          <div className="result-title">{t(outlook ? "gw.title" : "none.title")}</div>
           <div className="result-coords">{coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}</div>
         </div>
       </div>
-      <div className="basis">{t(`none.${data.noEstimateReason}`)}</div>
-      <div className="basis">{t("none.next")}</div>
+      {outlook ? <GroundwaterCard outlook={outlook} /> : <GroundwaterMissing outlook={data.groundwater} />}
+      {outlook ? (
+        <Disclosure icon={<Info size={15} strokeWidth={2.2} />} title={t("bore.title")}>
+          <div className="basis">{t(`none.${data.noEstimateReason}`)}</div>
+          <div className="basis">{t("none.next")}</div>
+        </Disclosure>
+      ) : (
+        <>
+          <div className="basis">{t(`none.${data.noEstimateReason}`)}</div>
+          <div className="basis">{t("none.next")}</div>
+        </>
+      )}
       <PredictionCode id={data.predictionId} />
       <NearbySection nearby={data.nearby} />
       <Advisory />
@@ -275,6 +329,12 @@ export default function PredictionPanel({ status, data, coords, onPinCurrentLoca
       </div>
 
       <div className="basis">{data.basis}</div>
+
+      {data.groundwater?.available ? (
+        <Disclosure icon={<Droplets size={15} strokeWidth={2.2} />} title={t("gw.title")} defaultOpen>
+          <GroundwaterCard outlook={data.groundwater} />
+        </Disclosure>
+      ) : <GroundwaterMissing outlook={data.groundwater} />}
 
       <PredictionCode id={data.predictionId} />
 

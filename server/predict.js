@@ -38,7 +38,7 @@ function nearbySummary(lat, lng, nearbyLogs) {
 }
 
 const NO_ESTIMATE_TEXT = {
-  OUTSIDE_PILOT_AREA: "BoreSakshi does not give estimates for this location yet. It is outside the pilot area.",
+  OUTSIDE_PILOT_AREA: "The borewell success estimate is only given inside the pilot area for now. The groundwater outlook covers all of India.",
   LOW_COVERAGE: "There is not enough geological and satellite data for this location to give an honest estimate.",
   MODEL_UNAVAILABLE: "The prediction model is not available right now, so no estimate was made.",
   NOT_RELEASED: "The prediction model is being tested against real drilling results before it is released.",

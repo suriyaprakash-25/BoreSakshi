@@ -54,6 +54,13 @@ def main() -> None:
     classifier = lgb.LGBMClassifier(random_state=0, **tg.PARAMS).fit(full, positive, categorical_feature=categorical or "auto")
     package["shallow"] = {"model": classifier, "calibrator": calibrator, "features": list(full.columns), "thresholdM": tg.SHALLOW_M}
 
+    # How often each map feature was blank in training. Live prediction refuses a blank
+    # only where training almost never saw one (a missing layer), not where blanks are
+    # normal (MODIS evapotranspiration is empty over towns, water and some farmland).
+    plain = sorted({name for entry in [*package["models"].values(), package["shallow"]] for name in entry["features"]
+                    if name not in tg.LOCAL and name in frame.columns})
+    package["trainingMissingRate"] = {name: round(float(frame[name].isna().mean()), 4) for name in plain}
+
     # Stations are kept so a prediction anywhere can use the same local evidence.
     package["stations"] = frame[["latitude", "longitude", "pre_m", "post_m", "rise_m", "pre_head", "post_head"]].copy()
     joblib.dump(package, GW_MODEL_DIR / "groundwater_model.joblib")

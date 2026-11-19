@@ -108,6 +108,10 @@ export class MlServiceClient {
     return this._request("/ml/predict", { method: "POST", body: payload });
   }
 
+  groundwater(payload) {
+    return this._request("/ml/groundwater", { method: "POST", body: payload });
+  }
+
   health({ timeoutMs = 750 } = {}) {
     return this._request("/ml/health", { timeoutMs, retries: 0 });
   }

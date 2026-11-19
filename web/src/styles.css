@@ -3776,3 +3776,6 @@ code {
 
 .follow-up { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
 .follow-up-open { display: grid; gap: 8px; }
+
+/* Groundwater outlook: GSI rock names can be long single tokens. */
+.groundwater .stat-value { overflow-wrap: break-word; }

@@ -27,6 +27,7 @@ os.environ.setdefault("CPL_VSIL_CURL_ALLOWED_EXTENSIONS", ".tif,.vrt")
 os.environ.setdefault("GDAL_HTTP_MAX_RETRY", "4")
 os.environ.setdefault("GDAL_HTTP_RETRY_DELAY", "2")
 os.environ.setdefault("GDAL_HTTP_TIMEOUT", "60")
+os.environ.setdefault("GDAL_CACHEMAX", "128")  # MB; GDAL's default is a share of all RAM
 
 import rasterio  # noqa: E402
 from pyproj import Transformer  # noqa: E402
@@ -46,7 +47,13 @@ def dataset(url: str, overview_level: int | None = None):
         cache = local.datasets = {}
     key = (url, overview_level)
     if key not in cache:
+        # Bounded per thread: across all of India an unbounded cache keeps every
+        # tile open and runs the machine out of memory.
+        while len(cache) >= 6:
+            cache.pop(next(iter(cache))).close()
         cache[key] = rasterio.open(url, overview_level=overview_level) if overview_level is not None else rasterio.open(url)
+    else:
+        cache[key] = cache.pop(key)  # most recently used goes last
     return cache[key]
 
 
@@ -287,6 +294,7 @@ def run_per_site(name: str, worker, sites: pd.DataFrame, threads: int) -> None:
     path = FEATURE_DIR / f"{name}.csv"
     done = set(pd.read_csv(path).site) if path.exists() else set()
     todo = [site for site in sites.itertuples() if int(site.site) not in done]
+    todo.sort(key=lambda site: (math.floor(site.latitude), math.floor(site.longitude)))  # one DEM tile at a time
     started = time.time()
     failures = 0
 
@@ -321,13 +329,13 @@ def main() -> None:
     if limit:
         sites = sites.sample(limit, random_state=1)
     if group == "dem":
-        run_per_site("dem", dem_row, sites, 8)
+        run_per_site("dem", dem_row, sites, int(os.getenv("BORESAKSHI_THREADS", "8")))
     elif group == "weathering":
         run_per_site("weathering", weathering_row, sites, 6)
     elif group == "soil":
         run_per_site("soil", soil_row, sites, 6)
     elif group == "surface":
-        run_per_site("surface", surface_row, sites, 8)
+        run_per_site("surface", surface_row, sites, int(os.getenv("BORESAKSHI_THREADS", "8")))
     elif group == "climate":
         climate_table(sites).to_csv(FEATURE_DIR / "climate.csv", index=False)
     elif group == "water":

@@ -10,8 +10,11 @@ services:
       DEPLOYMENT_ENV: "${DEPLOYMENT_ENV:-production}"
       RELEASE_VERSION: "${RELEASE_VERSION}"
       PORT: "8000"
+      # Groundwater outlook: trained model, results and India layers (git-ignored data).
+      BORESAKSHI_PUBLIC_DATA_DIR: /opt/boresakshi/public-data
     volumes:
       - "${MODEL_ARTIFACT_DIR}:/opt/boresakshi/artifacts:ro"
+      - "${GROUNDWATER_DATA_DIR:-../ml/data_public}:/opt/boresakshi/public-data:ro"
     expose:
       - "8000"
     networks:
