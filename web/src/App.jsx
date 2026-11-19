@@ -22,12 +22,15 @@ import AdminMap from "./screens/admin/AdminMap.jsx";
 import ReviewQueue from "./screens/admin/ReviewQueue.jsx";
 import RequireOperator from "./components/RequireOperator.jsx";
 import RequireAdmin from "./components/RequireAdmin.jsx";
+import HelpBot from "./components/HelpBot.jsx";
+import { HelpProvider } from "./helpContext.jsx";
 
 export default function App() {
   return (
     <>
       <Toaster
         position="bottom-right"
+        containerStyle={{ bottom: 96 }}
         toastOptions={{
           style: {
             background: "var(--card-glass)",
@@ -41,6 +44,7 @@ export default function App() {
       <AuthProvider>
         <OperatorDataProvider>
           <AdminDataProvider>
+            <HelpProvider>
             <BrowserRouter>
               <Routes>
                 <Route path="/" element={<LandingScreen />} />
@@ -64,7 +68,9 @@ export default function App() {
                 <Route path="/admin/flagged" element={<RequireAdmin><FlaggedLogs /></RequireAdmin>} />
                 <Route path="/admin/map" element={<RequireAdmin><AdminMap /></RequireAdmin>} />
               </Routes>
+              <HelpBot />
             </BrowserRouter>
+            </HelpProvider>
           </AdminDataProvider>
         </OperatorDataProvider>
       </AuthProvider>

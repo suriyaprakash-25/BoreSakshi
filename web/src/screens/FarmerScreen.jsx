@@ -8,6 +8,7 @@ import LegalFooter from "../components/LegalFooter.jsx";
 import { getPrediction, getBorewells, getLedger } from "../api.js";
 import { mapPickFromGeolocation, normalizeMapPick } from "../mapInteraction.js";
 import { useI18n } from "../i18n.jsx";
+import { useHelp } from "../helpContext.jsx";
 import toast from "react-hot-toast";
 
 const DEFAULT_CENTER = [11.36, 77.8]; // Namakkal / Tiruchengode belt
@@ -41,6 +42,13 @@ export default function FarmerScreen() {
   const [borewells, setBorewells] = useState([]);
   const [ledger, setLedger] = useState(null);
   const latestPick = useRef(0);
+  const { setResult: shareWithHelper } = useHelp();
+
+  // The help assistant explains whatever result is on screen, and nothing once we leave.
+  useEffect(() => {
+    shareWithHelper(status === "result" ? prediction : null);
+  }, [status, prediction, shareWithHelper]);
+  useEffect(() => () => shareWithHelper(null), [shareWithHelper]);
 
   useEffect(() => {
     getBorewells().then(setBorewells).catch(() => {});
