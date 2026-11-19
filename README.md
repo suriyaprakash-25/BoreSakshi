@@ -1,352 +1,262 @@
+<p align="center"><img src="logo.png" alt="BoreSakshi logo" width="140"></p>
+
 # BoreSakshi
 
-Know before you drill — a verified-outcome network + AI prediction engine that tells rural households and farmers where a borewell is likely to succeed, how deep, and with what yield, before they spend lakhs.
+Know before you drill: a borewell prediction app for farmers that publishes how accurate its own predictions turn out to be, using verified drilling outcomes from rig operators.
 
-## Structure
+## Overview
 
-```text
-boresakshi/
-├── server/   Node + Express + MongoDB API, trusted rig-data collection and accountability ledger
-├── web/      React + Vite + Leaflet farmer/operator/admin UI
-└── ml/       training + scientific evaluation + FastAPI serving + adaptive retraining/deployment controls
+In hard-rock regions of Tamil Nadu, a farmer can spend lakhs of rupees on a borewell that comes up dry, often on the word of a water diviner or a driller with no track record. Public data on dry borewells barely exists, so nobody can say how reliable any prediction is.
+
+BoreSakshi ("bore witness") tackles both halves of that problem:
+
+1. **Prediction.** A farmer taps a location on a map and gets either an ML estimate (chance of success, likely depth and yield, with uncertainty and explanations) or an honest "no estimate" with the verified wells nearby. It never shows a guessed number.
+2. **Accountability.** Every prediction is stored. When a rig operator later logs a real drilling outcome nearby and an admin verifies it, the earlier prediction is scored predicted-vs-actual, and the results feed a public accuracy ledger.
+
+Alongside the borewell estimate, the app gives an **India-wide groundwater outlook** (shallow water-table depth before and after the monsoon) from a model trained on public CGWB monitoring wells.
+
+The borewell estimate is limited to a pilot area (Namakkal / Tiruchengode belt). The project started as an entry for the MSME Idea Hackathon 6.0 (credited on the landing screen) and was then extended in numbered phases (documented in [`docs/`](docs)) toward a production pilot.
+
+## Key features
+
+**Farmers (public, no login)**
+- Leaflet map with tap-to-predict; Tamil (default) and English UI ([`web/src/strings.js`](web/src/strings.js)).
+- Prediction panel showing probability, depth, yield, uncertainty, the model's explanation factors and the nearest verified wells (coordinates rounded to about 1 km for privacy).
+- "No estimate" state with a reason when the pin is outside the pilot area, the ML service is down, or feature coverage is too low.
+- Groundwater outlook anywhere in India: pre/post-monsoon water-table depth with 80% ranges, chance that water is within 10 m, rock type and the nearest monitored well.
+- Public ledger page (`/ledger`): predictions issued and scored, accuracy, Brier score/calibration, depth and yield error, by model version and region.
+- Rule-based help bot that answers from fixed text and restates the shown numbers; it makes no AI call ([`web/src/helpBot.js`](web/src/helpBot.js)).
+
+**Rig operators (account required)**
+- Mobile-first drilling log: GPS location, date, depth, water strikes, yield, geological layers, optional VES/ERT resistivity readings, photo/video evidence, optional voice input.
+- Offline logging: records and files are queued in IndexedDB and sent when the device is back online ([`web/src/offlineQueue.js`](web/src/offlineQueue.js)).
+- Dashboard and history of their own logs, server-computed trust profile, re-review requests for rejected submissions.
+
+**Admins**
+- Review queue for submitted logs (`SUBMITTED -> UNDER_REVIEW -> VERIFIED / REJECTED`) with deterministic suspicious-data signals and an append-only audit trail.
+- Operator management (verify, deactivate), flagged logs, all-wells map, CSV export.
+- Data ingestion of external datasets with provenance, quality reports and publish gates.
+
+**ML and operations**
+- Python ML service (FastAPI) with candidate training, spatially blocked scientific evaluation, calibration, conformal uncertainty and a versioned prediction contract.
+- Continuous learning with mandatory human approval: candidates are staged, compared with production and only activated with an explicit `DEPLOY` confirmation; rollback is explicit too. This is adaptive retraining, not reinforcement learning.
+- Silent pilot mode (`ML_SILENT_PILOT=YES`): estimates are stored and scored but not shown to farmers.
+- Revocable server-side sessions with httpOnly cookies, recovery codes, rate limits, security event audit, encrypted backups, Prometheus metrics, Docker Compose deployment with monitoring.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    F["Farmer (browser / PWA)"] --> W["web/: React + Vite + Leaflet"]
+    O["Rig operator"] --> W
+    A["Admin"] --> W
+    W -->|"REST /api"| S["server/: Node + Express API"]
+    S --> DB[("MongoDB: predictions, drill logs, reviews, ledger, sessions")]
+    S --> M["Rig evidence storage (RIG_MEDIA_DIR)"]
+    S -->|"POST /ml/predict"| ML["ml/: FastAPI ML service"]
+    S -->|"POST /ml/groundwater"| ML
+    ML --> ART["Approved model artifacts + deployment manifest"]
+    ML --> GEO["Live geospatial features: DEM, land cover, rainfall, geology"]
+    S --> L["Ledger matching: verified outcome scores a past prediction"]
+    L --> DB
 ```
 
-## Runtime prediction path
+| Component | Role |
+|---|---|
+| [`web/`](web) | React 18 SPA (PWA with service worker). Screens for the farmer map, ledger, operator dashboard/log/history and admin console. All API calls go through [`web/src/api.js`](web/src/api.js). |
+| [`server/`](server) | Express API (ES modules). Validates every write with zod, owns auth/sessions, stores predictions and drill logs, runs the verification workflow and ledger matching, and calls the ML service through a client with timeouts, retries and a circuit breaker ([`mlClient.js`](server/mlClient.js)). |
+| [`ml/`](ml) | Python package `boresakshi_ml` (training, evaluation, inference, serving) plus [`ml/public_data/`](ml/public_data) scripts that build public-data features and train the groundwater model. Served by [`ml/service.py`](ml/service.py). |
+| MongoDB | Single data store, accessed only through [`server/db.js`](server/db.js). |
+| [`deploy/`](deploy) | Production and staging Docker Compose files, Caddy reverse proxy example, Prometheus/Alertmanager/Loki/Grafana config, backup and restore scripts, systemd timers. |
+| [`api/index.js`](api/index.js) + [`vercel.json`](vercel.json) | Optional Vercel demo deployment (web + API, without the ML service). |
 
-```text
-Farmer UI
-   ↓
-Node /api/predict
-   ↓ Phase 9 VERIFIED / unflagged / eligible wells only
-Python /ml/predict
-   ↓
-Live checksum-verified geospatial feature extraction
-   ↓
-Human-approved active model deployment pointer
-   ↓
-Phase 5-selected success + depth + yield models
-   ↓
-Calibration + conformal uncertainty + explanations
-   ↓
-Phase 7 versioned prediction-contract validation
-   ↓
-Node contract validation + Phase 11 accountability snapshot
-```
+## How it works
 
-Every accepted ML prediction carries a model version, feature version, prediction timestamp, uncertainty, explanations, coverage metadata and an immutable `featureSnapshotRef`. If the Python service is unavailable or returns an invalid/insufficient-coverage response, Node returns an honest "no estimate" with the verified wells nearby. No guessed number is shown or stored.
+**Prediction request**
+1. The farmer taps a point; the web app calls `POST /api/predict`.
+2. The server checks the pilot bounding box ([`pilotRegion.js`](server/pilotRegion.js)). Inside it, it calls `POST /ml/predict` on the ML service.
+3. The ML service extracts live geospatial features for that point, loads the model chain named by the human-approved active deployment pointer, and returns probability, depth and yield with calibration, conformal ranges, explanations and coverage metadata.
+4. The server validates the response against the versioned prediction contract ([`predictionContract.js`](server/predictionContract.js)). If anything fails (outside pilot area, model not ready, low coverage, bad contract), it returns `estimateAvailable: false` with a reason.
+5. Valid estimates are stored with model version, feature version and an immutable feature snapshot reference; repeat taps in the same cell and period share one record.
+6. In parallel, the server requests the groundwater outlook (`POST /ml/groundwater`); it is displayed but never stored in the ledger.
 
-## Groundwater outlook (anywhere in India)
+**Accountability loop**
+1. An operator submits a drill log (`POST /api/borewells`); it starts as `SUBMITTED` and is untrusted.
+2. An admin reviews the evidence and marks it `VERIFIED` or `REJECTED`.
+3. On verification, [`ledgerMatching.js`](server/ledgerMatching.js) scores one earlier prediction: the one linked by id, otherwise the nearest within the match radius (250 m by default) made before drilling.
+4. `GET /api/ledger` and the `/ledger` page publish the resulting accuracy, calibration and error metrics for the trained model only. If an outcome is later reopened, it is removed from current metrics and kept in history.
 
-The borewell success estimate is only given inside the Namakkal–Tiruchengode pilot area, because that is the estimate scored on the accountability ledger. Alongside it, `POST /api/predict` now returns a **groundwater outlook** for any location in India:
+## Results
 
-- depth to the shallow water table before and after the monsoon, each with an 80% likely range;
-- the chance that water is within 10 m before the monsoon;
-- the rock type at the location, the nearest monitored well, and the error measured for the farmer's own area.
+From [`docs/ml-data-and-training-plan.md`](docs/ml-data-and-training-plan.md) (sections 8 to 10):
 
-```text
-Farmer taps any point in India
-   ↓
-Node /api/predict ──► borewell estimate (pilot area only, ledger-scored)
-   │
-   └──► Python /ml/groundwater
-           ↓ refuses outside India, on open water, >50 km from a monitored well,
-           ↓ or when a map layer is missing
-        live terrain, land cover, rainfall, MODIS and GSI geology features
-        (same code that built the training table)
-           ↓
-        LightGBM pre/post-monsoon depth + conformal ranges + calibrated chance
-           ↓
-Node drops any response that fails validation → panel shows outlook or a reason
-```
-
-The outlook is context, not a prediction: it is never stored in the ledger, and the panel tells the farmer it is the open-well water table, not a promise that a borewell will strike water. If the cloud map servers are unreachable the farmer sees "try again", never a guessed number.
-
-**Training and accuracy.** The model is trained on 19,602 CGWB open-well monitoring stations across India (readings since 2015). Typical error before the monsoon, with whole 0.5° regions held out from training:
+**Groundwater outlook model** (LightGBM, trained on 19,602 CGWB open-well monitoring stations across India, readings since 2015). Mean absolute error with whole 0.5 degree regions held out:
 
 | Area | Before monsoon | After monsoon |
 |---|---|---|
-| All India | 3.51 m (nearby-wells average 3.76 m) | 3.08 m (3.35 m) |
+| All India | 3.51 m (nearby-wells baseline 3.76 m) | 3.08 m (baseline 3.35 m) |
 | Tamil Nadu | 2.48 m | 2.49 m |
-| Peninsula | 2.57 m | 2.05 m |
 | North India | 4.47 m | 4.14 m |
-| Pilot area (stations held out) | 2.85 m | 2.86 m |
 
-The 80% ranges covered 80.0% and 79.7% of held-out stations. North India errors are larger in metres because water there is tens of metres deep. Full results and limits are in section 10 of `docs/ml-data-and-training-plan.md`.
+The 80% ranges covered 80.0% (pre-monsoon) and 79.7% (post-monsoon) of held-out stations.
 
-**Settings.** `GROUNDWATER_OUTLOOK=NO` turns it off on the server; `ML_GROUNDWATER_TIMEOUT_MS` (default 20000) sets its own timeout, separate from the borewell model. On the ML service, `BORESAKSHI_GROUNDWATER=NO` skips loading it and `BORESAKSHI_GROUNDWATER_MODEL` points at a different model package.
+**Borewell model status.** The documented helper models trained on public well data did not pass the project's own release gates (regional hold-out R² near zero), so none was saved. A borewell success model needs rig records that include dry holes, which is why the operator logging and verification workflow exists. Until reviewed artifacts are configured, the ML service reports not-ready and the app shows "no estimate".
 
-## Hydrogeological ML Accuracy & Precision Enhancements (v1.7)
+## Tech stack
 
-Version 1.7 bridges the gap between regional satellite/DEM macro-grids and localized 10-meter plot-level drilling success by integrating hydrogeological physics and field sounding data:
+| Layer | Technologies |
+|---|---|
+| Frontend | React 18, Vite 6, React Router 7, Leaflet / React Leaflet, lucide-react, react-hot-toast, service worker + IndexedDB |
+| Backend | Node.js, Express, MongoDB driver, zod, bcrypt, JWT, cookie sessions, morgan, Node test runner |
+| ML | Python 3.12, FastAPI, Uvicorn, scikit-learn, XGBoost, LightGBM, pandas, NumPy; rasterio, pyproj, geopandas, SciPy for geospatial features |
+| Data sources | CGWB well and water-level data, Copernicus DEM, ESA WorldCover, CHIRPS rainfall, SoilGrids, MODIS, GSI geology |
+| Ops | Docker, Docker Compose, Caddy, Prometheus, Alertmanager, Loki, Fluent Bit, Grafana, restic backups, systemd timers, GitHub Actions |
 
-1. **Multi-Spectral Fracture Networks (Improvement 1):**
-   * Upgraded from coarse 30m DEM hillshade proxies to Sentinel-2 SWIR/NIR (Bands 8, 11, 12) PCA edge-detected lineaments.
-   * Engineered **Lineament Intersection Density ($L_{id}$)** and **Fault Proximity Angle ($\Delta\theta$)**, capturing fracture crossings that create high-yield rock-crushing corridors in crystalline hard rock (Kongu/Namakkal granite and gneiss).
-   * Increases dry-hole detection precision by 18–25% in crystalline bedrock.
-
-2. **Decoupled Groundwater Model Prior (Improvement 2):**
-   * Pre-computed water-table predictions from 9,573 CGWB observation wells and 10,352 dug wells are directly ingested as runtime engineered priors:
-     * `groundwaterDepthPreMonsoonM` (pre-monsoon water table depth)
-     * `groundwaterDepthPostMonsoonM` (post-monsoon water table depth)
-     * `groundwaterSeasonalRiseM` (seasonal recharge rise)
-   * Feeds the hydraulic recharge pressure directly into deep fracture prediction, reducing depth-to-first-strike MAE from ±65 ft down to ±35 ft.
-
-3. **Infiltration Physics — HAND, TWI, & Multi-Scale SPI (Improvement 3):**
-   * Replaced static annual precipitation means with infiltration dynamics:
-     * **Height Above Nearest Drainage (`terrainHandM`):** Relative elevation above drainage streams capturing perched aquifers.
-     * **Topographic Wetness Index (`terrainTwi`):** $\ln(a / \tan \beta)$ modeling surface runoff convergence.
-     * **Multi-Scale SPI (`climateSpi3`, `climateSpi6`, `climateSpi12`):** Agricultural moisture, seasonal aquifer replenishment, and deep hydrological state.
-     * **Vadose Permeability (`soilClayPercentage`):** Soil clay fraction capturing hydraulic conductivity ($K_{sat}$) constraints.
-
-4. **Monotonic Physical Constraints & Multi-Task Co-dependence (Improvement 4):**
-   * Enforced strict natural monotonic constraints in `XGBoost` and `HistGradientBoosting`:
-     * **Negative Direction (-1):** `terrainSlopeDeg`, `geologyDistanceToLineamentM`, `hydrologyDistanceToDrainageM`, `terrainHandM`, `soilClayPercentage`.
-     * **Positive Direction (+1):** `terrainTwi`, `geologyLineamentDensityKmPerKm2`, `geologyLineamentIntersectionDensity`, `climateSpi6`, `groundwaterSeasonalRiseM`.
-   * Enforced joint co-dependence between strike depth, expected yield, and strike odds to eliminate erratic spatial anomalies.
-
-5. **Micro-Geophysical Sounding Ingestion (Improvement 5):**
-   * Added field collection and validation for 1D Vertical Electrical Sounding (VES) and 2D Electrical Resistivity Tomography (ERT) in the rig operator mobile workflow (`web/src/screens/OperatorLog.jsx`).
-   * Captures apparent resistivity ($\Omega\cdot\text{m}$), weathered zone thickness (m), and sounding-indicated fracture depth (m).
-   * Submissions verified with VES/ERT data receive a **+15 evidence quality verification bonus** in Phase 9 trust scoring.
-
-## Rig-operator verification path
+## Project structure
 
 ```text
-Authenticated + verified operator account
-   ↓
-Device GPS + accuracy + drilling date
-   ↓
-Depth / strike / yield + geological layers
-   ↓
-Photo evidence (+ optional video)
-   ↓
-SUBMITTED / untrusted
-   ↓
-UNDER_REVIEW
-   ↓
-Deterministic review signals + human evidence review
-   ↓
-VERIFIED  or  REJECTED
-   ↓
-Only VERIFIED + unflagged + eligible outcomes become
-public data / ML evidence / future training / ledger truth
+BoreSakshi/
+├── web/                     # React farmer / operator / admin UI
+│   └── src/
+│       ├── screens/         # Landing, map, ledger, operator dashboard/log/history, admin/*
+│       ├── components/      # MapView, PredictionPanel, HelpBot, AppHeader, ...
+│       ├── api.js           # Single HTTP client
+│       ├── strings.js       # Tamil and English strings
+│       └── offlineQueue.js  # Offline drill-log queue
+├── server/                  # Express API
+│   ├── index.js             # App setup, auth, admin and ingestion routes
+│   ├── predict.js           # Prediction orchestration and no-estimate logic
+│   ├── phase8Routes.js      # Rig operator data collection and evidence
+│   ├── phase9Routes.js      # Verification lifecycle and review
+│   ├── phase11Routes.js     # Prediction storage and public ledger
+│   ├── phase15Routes.js     # Sessions, recovery, security endpoints
+│   ├── ledgerMatching.js    # Scores predictions against verified outcomes
+│   ├── groundwater.js       # Groundwater outlook client and validation
+│   ├── migrations/          # Versioned MongoDB migrations
+│   ├── scripts/             # Backup, restore, dataset build, preflight
+│   └── test/                # Node test suites (unit, API, real-Mongo e2e)
+├── ml/
+│   ├── boresakshi_ml/       # Training, evaluation, inference, serving package
+│   ├── public_data/         # Public-data feature extraction and groundwater model training
+│   ├── service.py           # FastAPI service (/ml/predict, /ml/groundwater, /ml/health)
+│   ├── train.py, evaluate.py, continuous.py, activate.py
+│   └── tests/               # pytest suites
+├── deploy/                  # Compose topologies, monitoring, backup scripts, runbooks
+├── docs/                    # Phase design docs, completion reports, ML data plan
+└── .github/workflows/       # CI and per-phase pipelines
 ```
 
-Phase 8 provides structured evidence-backed field collection. Phase 9 provides the formal human verification lifecycle, deterministic suspicious-data review, append-only review audit and server-computed operator trust profile. Phase 15 additionally requires the operator account itself to be verified before it can upload field evidence or submit a drilling record.
+## Getting started
 
-The Phase 9 trust/risk scores are operational review aids, not groundwater-model probabilities and not substitutes for Phase 5 scientific ML validation.
+### Prerequisites
 
-## Continuous learning path
+- Node.js and npm
+- MongoDB running locally (default `mongodb://localhost:27017/`, database `BoreSakshi`)
+- Python 3.12 (only for the ML service)
 
-```text
-Phase 9 VERIFIED outcomes
-   ↓
-new versioned feature dataset
-   ↓
-checksummed TrainingDatasetVersion
-   ↓
-Phase 4 candidate training
-   ↓
-Phase 5 spatial scientific evaluation
-   ↓
-production-model comparison
-   ↓
-HUMAN APPROVAL
-   ↓
-STAGED deployment
-   ↓ explicit DEPLOY
-ACTIVE deployment pointer
-   ↓
-Phase 11 post-deployment accountability metrics
-   ↓ human monitoring/review
-   ↓ explicit ROLLBACK when required
-```
-
-Phase 10 is continuous learning/adaptive retraining, **not reinforcement learning**. A new upload can never directly overwrite the production model. Automated comparison guards can hold a candidate for review, but only a separate human approval artifact and explicit deployment action can activate it.
-
-## Prediction accountability path
-
-```text
-Persisted prediction
-   ↓
-model/deployment/probability/depth/yield snapshot
-   ↓
-real borewell drilled
-   ↓
-Phase 9 VERIFIED outcome
-   ↓
-pre-drilling prediction matched within accountability radius
-   ↓
-correctness + Brier/calibration + strike/yield errors
-   ↓
-regional + model-version + source performance
-   ↓
-Phase 10 monitoring input
-```
-
-Phase 11 keeps each ML model version separate, and public accuracy counts the trained model only. If outcome trust is later reopened or removed, that outcome is removed from current performance metrics and the reopening is retained in append-only accountability history.
-
-## Production security and reliability
-
-Phase 15 adds application-level production controls without replacing the existing Phase 2–11 flows:
-
-- revocable server-side sessions beneath signed JWT identity;
-- `HttpOnly`, `Secure`-in-production, `SameSite=Strict` session cookies;
-- one-time hashed recovery codes, password reset/change and session revocation;
-- verified-admin and verified-field-operator authorization gates;
-- same-origin unsafe-write protection, HTTPS checks and security headers;
-- request IDs, safe error handling and expanded rate limits;
-- public borewell privacy projection;
-- append-only `security_event` audit records;
-- liveness/readiness and protected low-cardinality Prometheus metrics;
-- AES-256-GCM encrypted/checksummed Mongo backups and guarded restore;
-- high-severity production dependency-audit gates for server and web.
-
-Phase 15 hardens the application. Phase 18 supplies the deployment/operations package around those controls; real infrastructure credentials and reviewed ML artifacts remain deployment-time inputs rather than committed source data.
-
-## Full release testing
-
-Phase 17 adds a single release-oriented test matrix across the complete BoreSakshi stack:
-
-```text
-frontend component/form/map/auth tests + production build/preview
-                       ↓
-complete Node unit/API/security/accountability suite
-                       ↓
-real Node + real MongoDB drilling/accountability E2E
-                       ↓
-complete Python ML regression/leakage/inference suite
-                       ↓
-              Phase 17 release gate
-```
-
-The real-Mongo E2E covers operator registration/login, admin operator verification, farmer prediction persistence, no-estimate behaviour outside the pilot area, rig evidence upload, structured drilling submission, Phase 9 verification, Phase 11 accountability scoring, public privacy projection and outcome reopening/audit retention.
-
-Verified Phase 17 runtime-head results: 77 active backend tests passed with two intentional skips in the generic suite, the separate Mongo lifecycle passed, 5 frontend tests passed, the production frontend build/preview passed, 29 ML tests passed, and production server/web dependency audits passed with zero production vulnerabilities. See `docs/phase-17-full-testing.md` and `docs/phase-17-completion-report.md` for the exact scope and boundaries.
-
-## Production deployment and operations
-
-Phase 18 adds the provider-neutral production package and delivery controls:
-
-- non-root API, ML and web production containers with read-only filesystems/capability dropping/resource limits;
-- production/staging Compose topologies and private internal service networking;
-- fail-closed API and ML production preflight checks;
-- versioned additive MongoDB migrations with an explicit rollback gate;
-- graceful API shutdown/draining;
-- immutable commit-SHA image releases, staging-first delivery, smoke validation and previous-release rollback;
-- durable private rig-evidence and encrypted-backup volume mounts;
-- encrypted off-site restic backup plus scheduled restore rehearsal;
-- protected Prometheus metrics, Alertmanager, Loki, Fluent Bit and Grafana configuration;
-- GitHub Actions gates for full regression, dependency audits, real migration integration, Docker builds, image publication, staging and production environment approval.
-
-The production templates deliberately default external readiness attestations to `NO`. A live production deployment must provide real HTTPS/DNS, managed/private MongoDB, secrets, durable encrypted storage, off-site backup credentials, a tested alert receiver, deployment hosts/GitHub environment secrets and the human-reviewed active ML artifact chain. See `deploy/README.md` and `docs/phase-18-production-deployment.md`.
-
-## Run locally
-
-**1) Python ML service**
-
-The service remains not-ready until reviewed real Phase 4/5 artifacts, the live geospatial manifest, and the explicit serving approval gate are configured.
-
-```bash
-cd ml
-python -m venv .venv
-# activate environment
-python -m pip install -r requirements-candidates.txt
-# configure values from ml/.env.example in your shell
-python -m uvicorn service:app --host 127.0.0.1 --port 8000
-```
-
-For a reviewed real-artifact v1 activation candidate, run the Phase 7 preflight before routing farmer traffic:
-
-```bash
-python activate.py --lat 11.36 --lng 77.80 --activation-id boresakshi-v1-candidate --out activations/boresakshi-v1-candidate
-```
-
-Phase 10 adaptive retraining is managed through `ml/continuous.py`:
-
-```bash
-python continuous.py stage ...
-python continuous.py approve ...
-python continuous.py stage-deployment ...
-python continuous.py activate ... --confirm DEPLOY
-python continuous.py monitor ...
-python continuous.py rollback ... --confirm ROLLBACK
-```
-
-When `BORESAKSHI_DEPLOYMENT_MANIFEST` points to a checksummed ACTIVE Phase 10 deployment pointer, the ML service resolves that exact reviewed model/evaluation/feature chain. `BORESAKSHI_PHASE6_APPROVED=YES` remains a mandatory global serving kill switch.
-
-The groundwater outlook loads in the background when the same service starts, and works even while the borewell model is not ready. It needs the geospatial packages and the trained model data, which is git-ignored (`ml/data_public`: `gw_model/`, `gw_results.json`, `layers/` and the GSI files):
-
-```bash
-python -m pip install -r requirements.txt -r requirements-data.txt
-python -m uvicorn service:app --host 127.0.0.1 --port 8000
-curl http://127.0.0.1:8000/ml/groundwater/health      # ok: true once loaded
-```
-
-In Docker, mount that folder and set `BORESAKSHI_PUBLIC_DATA_DIR` (the production compose file mounts `GROUNDWATER_DATA_DIR`, default `../ml/data_public`, read-only). Live outlooks also need internet access for the Copernicus DEM and ESA WorldCover rasters.
-
-**2) Node backend**
+### 1. Backend
 
 ```bash
 cd server
 npm install
-# copy server/.env.example to .env and configure secrets/origin/security values
-node seed.js     # optional demo logs
-npm start        # http://localhost:4000
+cp .env.example .env      # then fill in the values
+node seed.js              # optional: sample drill logs around 11.36, 77.80
+npm start                 # http://localhost:4000  (npm run dev for watch mode)
 ```
 
-Phase 15 operational checks and backup commands:
+To make an existing operator account an admin, run `node makeAdmin.js <phone_number>` from `server/` ([`makeAdmin.js`](server/makeAdmin.js)).
 
-```bash
-npm run test:phase15
-npm run security:audit
-npm run backup:create
-npm run backup:verify -- <backup-directory>
-npm run backup:restore -- <backup-directory>   # dry-run by default
-```
-
-Phase 17 backend test commands:
-
-```bash
-npm run test:phase17
-# dedicated real-Mongo lifecycle requires PHASE17_E2E=YES and a MongoDB URI
-npm run test:phase17:e2e
-```
-
-Phase 8 evidence is stored under `RIG_MEDIA_DIR`. Production deployment must use durable/private storage; the local default is for development and application-contract validation.
-
-Verification review is available to admins at `/admin/review`. Rig operators see their server-computed Phase 9 trust profile on the dashboard and can request re-review for rejected submissions from History.
-
-The public `/ledger` page reports persisted prediction counts, classification accuracy, Brier/calibration, water-strike/yield error, model-version performance and regional performance. `GET /api/ledger`, `/api/ledger/entries`, `/api/ledger/models` and `/api/ledger/regions` expose the same additive accountability contract.
-
-**3) Web**
+### 2. Web
 
 ```bash
 cd web
 npm install
-npm run test:phase17
-npm run build
-npm run dev      # http://localhost:5173
+npm run dev               # http://localhost:5173
 ```
 
-Signup displays a recovery code once. Save it securely; only its hash is stored by the backend. The reset flow is available at `/reset-password`.
+The web app reads `VITE_API_URL` (default `http://localhost:4000`). Map tiles need internet access.
 
-## Roadmap status
+### 3. ML service (optional)
 
-- [x] Phase 2 — real-data ingestion, provenance, review and quality gates
-- [x] Phase 3 — real geospatial feature-engineering pipeline
-- [x] Phase 4 — real-model candidate training/registry
-- [x] Phase 5 — spatial scientific evaluation/calibration/uncertainty/selection
-- [x] Phase 6 — Python ML service + Node orchestration
-- [x] Phase 7 — real prediction-engine contract, immutable feature snapshots and activation preflight
-- [x] Phase 8 — authenticated structured rig-operator data collection + evidence + untrusted-by-default gate
-- [x] Phase 9 — formal verification lifecycle + suspicious-data review + operator/data trust + append-only audit
-- [x] Phase 10 — adaptive retraining + production comparison + human approval + staged activation + rollback controls
-- [x] Phase 11 — model-version prediction accountability, calibration, depth/yield error and regional performance
-- [x] Phase 15 — production application security, privacy, sessions, recovery, audits, backups and monitoring
-- [x] Phase 17 — full frontend/backend/ML/integration/end-to-end release testing
-- [x] Phase 18 — production deployment package, CI/CD, rollback, monitoring, backup and recovery controls
-- [x] v1.7 — Five Hydrogeological ML Accuracy & Precision Enhancements (Fracture networks, CGWB engineered priors, infiltration physics, monotonic constraints, and micro-geophysics)
-- [x] v1.8 — India-wide groundwater outlook in the farmer app (19,602 CGWB stations, Tamil and English, never ledger-scored)
+Without it, the app runs and returns "no estimate" for borewells.
 
-All BoreSakshi software roadmap phases through v1.8 are now implemented in `main`. Phase 10 still never replaces production automatically, and a live production cutover still requires the real external infrastructure/secrets plus the reviewed active ML artifacts and explicit deployment approvals described in Phase 18.
+```bash
+cd ml
+python -m venv .venv
+# activate the virtual environment
+python -m pip install -r requirements-candidates.txt
+# for the groundwater outlook also:
+python -m pip install -r requirements.txt -r requirements-data.txt
+python -m uvicorn service:app --host 127.0.0.1 --port 8000
+```
+
+The borewell model only serves once reviewed artifacts, the feature manifest and `BORESAKSHI_PHASE6_APPROVED=YES` are configured. The groundwater model needs the git-ignored `ml/data_public` folder (trained model and map layers).
+
+### Environment variables
+
+Server ([`server/.env.example`](server/.env.example)):
+
+| Variables | Purpose |
+|---|---|
+| `MONGODB_URI`, `MONGODB_DB`, `PORT`, `FRONTEND_URL` | Database, port, allowed web origin |
+| `JWT_SECRET`, `RIG_EVIDENCE_SECRET`, `SESSION_TTL_HOURS`, `BCRYPT_ROUNDS` | Auth, sessions and evidence signing |
+| `API_RATE_LIMIT`, `AUTH_RATE_LIMIT`, `SIGNIN_FAILURE_LIMIT`, `PASSWORD_RESET_LIMIT`, `PREDICT_RATE_LIMIT`, `ADMIN_RATE_LIMIT` | Rate limits |
+| `ML_SERVICE_URL`, `ML_SERVICE_TIMEOUT_MS`, `ML_SERVICE_RETRIES`, `ML_CIRCUIT_FAILURE_THRESHOLD`, `ML_CIRCUIT_COOLDOWN_MS`, `REQUIRE_ML_READY`, `ML_SILENT_PILOT` | ML service connection and release mode |
+| `PILOT_BBOX`, `LEDGER_MATCH_RADIUS_KM`, `LEDGER_MATCH_WINDOW_DAYS` | Pilot area and ledger matching |
+| `RIG_MEDIA_DIR`, `RIG_MEDIA_UPLOAD_LIMIT`, `RIG_MEDIA_DURABLE`, `RIG_EVIDENCE_UNBOUND_MAX_AGE_HOURS` | Evidence uploads |
+| `BACKUP_ENCRYPTION_KEY_BASE64`, `BACKUP_DIR`, `MONITORING_TOKEN`, `INGESTION_MAX_BYTES` | Backups, metrics and ingestion |
+| `DEPLOYMENT_ENV`, `RELEASE_VERSION`, `GRACEFUL_SHUTDOWN_MS`, `OFFSITE_BACKUP_CONFIGURED`, `CENTRAL_LOGGING_CONFIGURED`, `ALERT_DELIVERY_CONFIGURED` | Production preflight attestations |
+
+Groundwater settings: `GROUNDWATER_OUTLOOK=NO` disables it, `ML_GROUNDWATER_TIMEOUT_MS` sets its timeout.
+
+ML service ([`ml/.env.example`](ml/.env.example)): `BORESAKSHI_DEPLOYMENT_MANIFEST`, `BORESAKSHI_PHASE4_RUN_DIR`, `BORESAKSHI_PHASE5_EVALUATION_DIR`, `BORESAKSHI_FEATURE_MANIFEST`, `BORESAKSHI_PHASE6_APPROVED` (global serving switch), `BORESAKSHI_MIN_FEATURE_COVERAGE_PCT`, `BORESAKSHI_WARN_FEATURE_COVERAGE_PCT`, `LOG_LEVEL`, `ML_WORKERS`, plus `BORESAKSHI_PUBLIC_DATA_DIR` / `BORESAKSHI_GROUNDWATER` for the groundwater model.
+
+### Tests
+
+```bash
+cd server && npm run test:all          # full Node suite (real-Mongo e2e needs PHASE17_E2E=YES: npm run test:phase17:e2e)
+cd web && npm test                     # UI logic tests
+cd ml && python -m pytest              # ML regression, leakage and inference tests
+```
+
+### Model lifecycle commands
+
+```bash
+cd ml
+python continuous.py stage ...          # register a candidate
+python continuous.py approve ...        # human approval artifact
+python continuous.py stage-deployment ...
+python continuous.py activate ... --confirm DEPLOY
+python continuous.py rollback ... --confirm ROLLBACK
+```
+
+Production deployment (Compose, migrations, backups, monitoring) is described in [`deploy/README.md`](deploy/README.md) and [`docs/phase-18-production-deployment.md`](docs/phase-18-production-deployment.md).
+
+## API overview
+
+| Endpoint | Description |
+|---|---|
+| `POST /api/predict` | Borewell estimate (pilot area) or no-estimate, plus nearby verified wells and the groundwater outlook |
+| `GET /api/ledger`, `/api/ledger/entries`, `/api/ledger/models`, `/api/ledger/regions` | Public accountability metrics |
+| `POST /api/auth/signup`, `POST /api/auth/signin`, `POST /api/auth/signout` | Operator accounts (signup returns a one-time recovery code) |
+| `POST /api/borewells`, `GET /api/borewells/mine` | Submit and list the operator's drill logs |
+| `GET /api/admin/operators`, `GET /api/admin/logs`, `PATCH /api/admin/operators/:id`, `PATCH /api/admin/logs/:id` | Admin console |
+| `/api/admin/ingestion/*` | External dataset ingestion, review and publish |
+| `GET /api/health` | Liveness and database status |
+| ML: `POST /ml/predict`, `POST /ml/groundwater`, `GET /ml/health`, `GET /ml/model-info` | Internal ML service |
+
+## Limitations and roadmap
+
+- **No production borewell model yet.** Public data lacks dry-hole records; training a real model is blocked on rig-operator partnerships, a hydrogeologist-defined success criterion and access to some government layers (see section 8 of the [ML plan](docs/ml-data-and-training-plan.md)).
+- The borewell estimate is limited to the Namakkal / Tiruchengode pilot box.
+- The groundwater outlook describes the shallow open-well water table, not whether a borewell will strike water, and needs internet access for live map layers.
+- Operator trust scores are review aids, not model probabilities.
+- Site assignments for operators are not created by the app yet.
+- The Vercel deployment is demo-only: no ML service, no evidence uploads.
+- A real production cutover needs real infrastructure, secrets, durable storage and reviewed ML artifacts, as listed in [`deploy/PILOT-RUNBOOK.md`](deploy/PILOT-RUNBOOK.md).
+
+Phase-by-phase design notes and completion reports (phases 2 to 11, 15, 17 and 18) are in [`docs/`](docs).
+
+## Author
+
+Built by [Suriyaprakash](https://github.com/suriyaprakash-25).
